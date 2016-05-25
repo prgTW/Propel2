@@ -2604,6 +2604,11 @@ class Criteria
                 }
                 $sql .= ' WHERE ' .  implode(' AND ', $whereClause);
 
+                $limit = $this->getLimit();
+                if ($limit > 0) {
+                    $adapter->applyLimit($sql, 0, $limit, $this);
+                }
+
                 $stmt = $con->prepare($sql);
 
                 $adapter->bindValues($stmt, $params, $dbMap);

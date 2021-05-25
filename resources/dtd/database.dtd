@@ -1,6 +1,5 @@
 <!--
     Propel XML database schema DTD
-    $Id: database.dtd,v 1.7 2005/03/30 11:38:18 hlellelid Exp $
 
     This is based very closely on the schema DTD for Torque, but
     some differences do exist.
@@ -135,7 +134,8 @@ PHP class or method name.
 <!ELEMENT reference EMPTY>
 <!ATTLIST reference
   local CDATA #REQUIRED
-  foreign CDATA #REQUIRED
+  foreign CDATA #IMPLIED
+  value CDATA #IMPLIED
 >
 
 <!ELEMENT index (index-column+,vendor*)>

@@ -1,26 +1,18 @@
 <?php
 
 /**
- * This file is part of the Propel package.
+ * MIT License. This file is part of the Propel package.
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
- *
- * @license MIT License
  */
 
 namespace Propel\Generator\Builder\Util;
 
 use Propel\Generator\Config\GeneratorConfigInterface;
 use Propel\Generator\Exception\SchemaException;
-use Propel\Generator\Model\Behavior;
-use Propel\Generator\Model\Column;
-use Propel\Generator\Model\Database;
-use Propel\Generator\Model\ForeignKey;
 use Propel\Generator\Model\Index;
 use Propel\Generator\Model\Schema;
-use Propel\Generator\Model\Table;
 use Propel\Generator\Model\Unique;
-use Propel\Generator\Model\VendorInfo;
 use Propel\Generator\Platform\PlatformInterface;
 
 /**
@@ -36,68 +28,119 @@ use Propel\Generator\Platform\PlatformInterface;
  */
 class SchemaReader
 {
-    /** enables debug output */
-    const DEBUG = false;
+    public const DEBUG = false;
 
-    /** @var Schema  */
+    /**
+     * @var \Propel\Generator\Model\Schema
+     */
     private $schema;
 
-    /** @var Database */
+    /**
+     * @var resource
+     */
+    private $parser;
+
+    /**
+     * @var \Propel\Generator\Model\Database
+     */
     private $currDB;
 
-    /** @var Table */
+    /**
+     * @var \Propel\Generator\Model\Table
+     */
     private $currTable;
 
-    /** @var Column */
+    /**
+     * @var \Propel\Generator\Model\Column
+     */
     private $currColumn;
 
-    /** @var ForeignKey */
+    /**
+     * @var \Propel\Generator\Model\ForeignKey
+     */
     private $currFK;
 
-    /** @var Index */
+    /**
+     * @var \Propel\Generator\Model\Index
+     */
     private $currIndex;
 
-    /** @var Unique */
+    /**
+     * @var \Propel\Generator\Model\Unique
+     */
     private $currUnique;
 
-    /** @var Behavior */
+    /**
+     * @var \Propel\Generator\Model\Behavior
+     */
     private $currBehavior;
 
-    /** @var VendorInfo */
+    /**
+     * @var \Propel\Generator\Model\VendorInfo
+     */
     private $currVendorObject;
 
-    private $isForReferenceOnly;
+    /**
+     * @var bool
+     */
+    private $isForReferenceOnly = false;
+
+    /**
+     * @var string|null
+     */
     private $currentPackage;
+
+    /**
+     * @var string|null
+     */
     private $currentXmlFile;
+
+    /**
+     * @var string|null
+     */
     private $defaultPackage;
+
+    /**
+     * @var array|null
+     */
+    private $currParameterListCollector;
+
+    /**
+     * @deprecated Unused.
+     *
+     * @var string
+     */
     private $encoding;
 
     /**
-     * two-dimensional array,
+     * Two-dimensional array,
      * first dimension is for schemas(key is the path to the schema file),
-     * second is for tags within the schema
+     * second is for tags within the schema.
+     *
+     * @var array
      */
     private $schemasTagsStack = [];
 
     /**
      * Creates a new instance for the specified database type.
      *
-     * @param PlatformInterface $defaultPlatform The default database platform for the application.
-     * @param string            $defaultPackage  the default PHP package used for the om
-     * @param string            $encoding        The database encoding.
+     * @param \Propel\Generator\Platform\PlatformInterface|null $defaultPlatform The default database platform for the application.
+     * @param string|null $defaultPackage the default PHP package used for the om
+     * @param string $encoding The database encoding.
      */
-    public function __construct(PlatformInterface $defaultPlatform = null, $defaultPackage = null, $encoding = 'iso-8859-1')
+    public function __construct(?PlatformInterface $defaultPlatform = null, $defaultPackage = null, $encoding = 'iso-8859-1')
     {
         $this->schema = new Schema($defaultPlatform);
         $this->defaultPackage = $defaultPackage;
-        $this->firstPass = true;
         $this->encoding = $encoding;
     }
 
     /**
      * Set the Schema generator configuration
      *
-     * @param GeneratorConfigInterface $generatorConfig
+     * @param \Propel\Generator\Config\GeneratorConfigInterface $generatorConfig
+     *
+     * @return void
      */
     public function setGeneratorConfig(GeneratorConfigInterface $generatorConfig)
     {
@@ -108,14 +151,15 @@ class SchemaReader
      * Parses a XML input file and returns a newly created and
      * populated Schema structure.
      *
-     * @param  string $xmlFile The input file to parse.
-     * @return Schema populated by <code>xmlFile</code>.
+     * @param string $xmlFile The input file to parse.
+     *
+     * @return \Propel\Generator\Model\Schema|null
      */
     public function parseFile($xmlFile)
     {
         // we don't want infinite recursion
         if ($this->isAlreadyParsed($xmlFile)) {
-            return;
+            return null;
         }
 
         return $this->parseString(file_get_contents($xmlFile), $xmlFile);
@@ -125,58 +169,76 @@ class SchemaReader
      * Parses a XML input string and returns a newly created and
      * populated Schema structure.
      *
-     * @param  string $xmlString The input string to parse.
-     * @param  string $xmlFile   The input file name.
-     * @return Schema
+     * @param string $xmlString The input string to parse.
+     * @param string|null $xmlFile The input file name.
+     *
+     * @throws \Propel\Generator\Exception\SchemaException
+     *
+     * @return \Propel\Generator\Model\Schema|null
      */
     public function parseString($xmlString, $xmlFile = null)
     {
         // we don't want infinite recursion
         if ($this->isAlreadyParsed($xmlFile)) {
-            return;
+            return null;
         }
+
         // store current schema file path
         $this->schemasTagsStack[$xmlFile] = [];
         $this->currentXmlFile = $xmlFile;
 
-        $parser = xml_parser_create();
-        xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
-        xml_set_object($parser, $this);
-        xml_set_element_handler($parser, 'startElement', 'endElement');
-        if (!xml_parse($parser, $xmlString)) {
-            throw new SchemaException(sprintf('XML error: %s at line %d',
-                xml_error_string(xml_get_error_code($parser)),
-                xml_get_current_line_number($parser))
+        $parserStash = $this->parser;
+        $this->parser = xml_parser_create();
+        xml_parser_set_option($this->parser, XML_OPTION_CASE_FOLDING, 0);
+        xml_set_object($this->parser, $this);
+        xml_set_element_handler($this->parser, 'startElement', 'endElement');
+        if (!xml_parse($this->parser, $xmlString)) {
+            throw new SchemaException(
+                sprintf(
+                    'XML error: %s at line %d',
+                    xml_error_string(xml_get_error_code($this->parser)),
+                    xml_get_current_line_number($this->parser)
+                )
             );
         }
-        xml_parser_free($parser);
+        xml_parser_free($this->parser);
+        $this->parser = $parserStash;
 
         array_pop($this->schemasTagsStack);
 
         return $this->schema;
     }
 
-    public function startElement($parser, $name, $attributes)
+    /**
+     * @param resource $parser
+     * @param string $tagName
+     * @param array $attributes
+     *
+     * @throws \Propel\Generator\Exception\SchemaException
+     *
+     * @return void
+     */
+    public function startElement($parser, $tagName, $attributes)
     {
         $parentTag = $this->peekCurrentSchemaTag();
-        if (false === $parentTag) {
-            switch ($name) {
+        if ($parentTag === false) {
+            switch ($tagName) {
                 case 'database':
                     if ($this->isExternalSchema()) {
                         $this->currentPackage = isset($attributes['package']) ? $attributes['package'] : null;
-                        if (null === $this->currentPackage) {
+                        if ($this->currentPackage === null) {
                             $this->currentPackage = $this->defaultPackage;
                         }
                     } else {
                         $this->currDB = $this->schema->addDatabase($attributes);
                     }
-                    break;
 
+                    break;
                 default:
-                    $this->_throwInvalidTagException($parser, $name);
+                    $this->throwInvalidTagException($tagName);
             }
-        } elseif ('database' === $parentTag) {
-            switch ($name) {
+        } elseif ($parentTag === 'database') {
+            switch ($tagName) {
                 case 'external-schema':
                     $xmlFile = isset($attributes['filename']) ? $attributes['filename'] : null;
 
@@ -184,10 +246,10 @@ class SchemaReader
                     // and it's ignored in the nested external-schemas
                     if (!$this->isExternalSchema()) {
                         $isForRefOnly = isset($attributes['referenceOnly']) ? $attributes['referenceOnly'] : null;
-                        $this->isForReferenceOnly = (null !== $isForRefOnly ? ('true' === strtolower($isForRefOnly)) : true); // defaults to TRUE
+                        $this->isForReferenceOnly = ($isForRefOnly !== null ? (strtolower($isForRefOnly) === 'true') : true); // defaults to TRUE
                     }
 
-                    if ('/' !== $xmlFile{0}) {
+                    if ($xmlFile[0] !== '/') {
                         $xmlFile = realpath(dirname($this->currentXmlFile) . DIRECTORY_SEPARATOR . $xmlFile);
                         if (!file_exists($xmlFile)) {
                             throw new SchemaException(sprintf('Unknown include external "%s"', $xmlFile));
@@ -195,193 +257,251 @@ class SchemaReader
                     }
 
                     $this->parseFile($xmlFile);
-                break;
 
+                    break;
                 case 'domain':
                     $this->currDB->addDomain($attributes);
-                    break;
 
+                    break;
                 case 'table':
-                    if (!isset($attributes['schema']) 
+                    if (
+                        !isset($attributes['schema'])
                         && $this->currDB->getSchema() && $this->currDB->getPlatform()->supportsSchemas()
-                        && false === strpos($attributes['name'], $this->currDB->getPlatform()->getSchemaDelimiter())) {
+                        && strpos($attributes['name'], $this->currDB->getPlatform()->getSchemaDelimiter()) === false
+                    ) {
                         $attributes['schema'] = $this->currDB->getSchema();
                     }
-                    
+
                     $this->currTable = $this->currDB->addTable($attributes);
                     if ($this->isExternalSchema()) {
                         $this->currTable->setForReferenceOnly($this->isForReferenceOnly);
                         $this->currTable->setPackage($this->currentPackage);
                     }
-                    break;
 
+                    break;
                 case 'vendor':
                     $this->currVendorObject = $this->currDB->addVendorInfo($attributes);
-                    break;
 
+                    break;
                 case 'behavior':
                     $this->currBehavior = $this->currDB->addBehavior($attributes);
-                  break;
 
+                    break;
                 default:
-                    $this->_throwInvalidTagException($parser, $name);
+                    $this->throwInvalidTagException($tagName);
             }
-
-        } elseif ('table' === $parentTag) {
-            switch ($name) {
+        } elseif ($parentTag === 'table') {
+            switch ($tagName) {
                 case 'column':
                     $this->currColumn = $this->currTable->addColumn($attributes);
-                    break;
 
+                    break;
                 case 'foreign-key':
                     $this->currFK = $this->currTable->addForeignKey($attributes);
-                    break;
 
+                    break;
                 case 'index':
                     $this->currIndex = new Index();
                     $this->currIndex->setTable($this->currTable);
                     $this->currIndex->loadMapping($attributes);
-                    break;
 
+                    break;
                 case 'unique':
                     $this->currUnique = new Unique();
                     $this->currUnique->setTable($this->currTable);
                     $this->currUnique->loadMapping($attributes);
-                    break;
 
+                    break;
                 case 'vendor':
                     $this->currVendorObject = $this->currTable->addVendorInfo($attributes);
-                    break;
 
+                    break;
                 case 'id-method-parameter':
                     $this->currTable->addIdMethodParameter($attributes);
-                    break;
 
+                    break;
                 case 'behavior':
                     $this->currBehavior = $this->currTable->addBehavior($attributes);
+
                     break;
-
                 default:
-                    $this->_throwInvalidTagException($parser, $name);
+                    $this->throwInvalidTagException($tagName);
             }
-
-        } elseif ('column' === $parentTag) {
-
-            switch ($name) {
+        } elseif ($parentTag === 'column') {
+            switch ($tagName) {
                 case 'inheritance':
                     $this->currColumn->addInheritance($attributes);
-                    break;
 
+                    break;
                 case 'vendor':
                     $this->currVendorObject = $this->currColumn->addVendorInfo($attributes);
+
                     break;
-
                 default:
-                    $this->_throwInvalidTagException($parser, $name);
+                    $this->throwInvalidTagException($tagName);
             }
-
-        } elseif ('foreign-key' === $parentTag) {
-
-            switch ($name) {
+        } elseif ($parentTag === 'foreign-key') {
+            switch ($tagName) {
                 case 'reference':
                     $this->currFK->addReference($attributes);
-                    break;
 
+                    break;
                 case 'vendor':
-                    $this->currVendorObject = $this->currUnique->addVendorInfo($attributes);
+                    $this->currVendorObject = $this->currFK->addVendorInfo($attributes);
+
                     break;
-
                 default:
-                    $this->_throwInvalidTagException($parser, $name);
+                    $this->throwInvalidTagException($tagName);
             }
-
-        } elseif ('index' === $parentTag) {
-
-            switch ($name) {
+        } elseif ($parentTag === 'index') {
+            switch ($tagName) {
                 case 'index-column':
                     $this->currIndex->addColumn($attributes);
-                    break;
 
+                    break;
                 case 'vendor':
                     $this->currVendorObject = $this->currIndex->addVendorInfo($attributes);
+
                     break;
-
                 default:
-                    $this->_throwInvalidTagException($parser, $name);
+                    $this->throwInvalidTagException($tagName);
             }
-
-        } elseif ('unique' === $parentTag) {
-
-            switch ($name) {
+        } elseif ($parentTag === 'unique') {
+            switch ($tagName) {
                 case 'unique-column':
                     $this->currUnique->addColumn($attributes);
-                    break;
 
+                    break;
                 case 'vendor':
                     $this->currVendorObject = $this->currUnique->addVendorInfo($attributes);
+
                     break;
-
                 default:
-                    $this->_throwInvalidTagException($parser, $name);
+                    $this->throwInvalidTagException($tagName);
             }
-        } elseif ($parentTag == 'behavior') {
-
-            switch ($name) {
+        } elseif ($parentTag === 'behavior') {
+            switch ($tagName) {
                 case 'parameter':
                     $this->currBehavior->addParameter($attributes);
+
                     break;
+                case 'parameter-list':
+                    $this->initParameterListCollector($attributes);
 
+                    break;
                 default:
-                    $this->_throwInvalidTagException($parser, $name);
+                    $this->throwInvalidTagException($tagName);
             }
-        } elseif ('vendor' === $parentTag) {
+        } elseif ($parentTag === 'parameter-list') {
+            switch ($tagName) {
+                case 'parameter-list-item':
+                    $this->addItemToParameterListCollector();
 
-            switch ($name) {
+                    break;
+                default:
+                    $this->throwInvalidTagException($tagName);
+            }
+        } elseif ($parentTag === 'parameter-list-item') {
+            switch ($tagName) {
+                case 'parameter':
+                    $this->addAttributeToParameterListItem($attributes);
+
+                    break;
+                default:
+                    $this->throwInvalidTagException($tagName);
+            }
+        } elseif ($parentTag === 'vendor') {
+            switch ($tagName) {
                 case 'parameter':
                     $this->currVendorObject->setParameter($attributes['name'], $attributes['value']);
-                    break;
 
+                    break;
                 default:
-                    $this->_throwInvalidTagException($parser, $name);
+                    $this->throwInvalidTagException($tagName);
             }
         } else {
             // it must be an invalid tag
-            $this->_throwInvalidTagException($parser, $name);
+            $this->throwInvalidTagException($tagName);
         }
 
-        $this->pushCurrentSchemaTag($name);
+        $this->pushCurrentSchemaTag($tagName);
     }
 
-    protected function _throwInvalidTagException($parser, $tag_name)
+    /**
+     * @param string $tag_name
+     *
+     * @return void
+     */
+    protected function throwInvalidTagException($tag_name)
+    {
+        $this->throwSchemaExceptionWithLocation('Unexpected tag <%s>', $tag_name);
+    }
+
+    /**
+     * @param string $format
+     * @param mixed $args sprintf arguments
+     *
+     * @throws \Propel\Generator\Exception\SchemaException
+     *
+     * @return void
+     */
+    private function throwSchemaExceptionWithLocation($format, ...$args)
+    {
+        $format .= ' in %s';
+        $args[] = $this->getLocationDescription();
+        $message = vsprintf($format, $args);
+
+        throw new SchemaException($message);
+    }
+
+    /**
+     * Builds a human readable description of the current location in the parser, i.e. "file schema.xml line 42, column 43"
+     *
+     * @return string
+     */
+    private function getLocationDescription()
     {
         $location = '';
-        if (null !== $this->currentXmlFile) {
+        if ($this->currentXmlFile !== null) {
             $location .= sprintf('file %s,', $this->currentXmlFile);
         }
 
-        $location .= sprintf('line %d', xml_get_current_line_number($parser));
-        if ($col = xml_get_current_column_number($parser)) {
+        $location .= sprintf('line %d', xml_get_current_line_number($this->parser));
+        if ($col = xml_get_current_column_number($this->parser)) {
             $location .= sprintf(', column %d', $col);
         }
 
-        throw new SchemaException(sprintf('Unexpected tag <%s> in %s', $tag_name, $location));
+        return $location;
     }
 
-    public function endElement($parser, $name)
+    /**
+     * @param resource $parser
+     * @param string $tagName
+     *
+     * @return void
+     */
+    public function endElement($parser, $tagName)
     {
-        if ('index' === $name) {
+        if ($tagName === 'index') {
             $this->currTable->addIndex($this->currIndex);
-        } else if ('unique' === $name) {
+        } elseif ($tagName === 'unique') {
             $this->currTable->addUnique($this->currUnique);
         }
 
-        if (self::DEBUG) {
-            print('endElement(' . $name . ") called\n");
+        if (static::DEBUG) {
+            print('endElement(' . $tagName . ") called\n");
         }
 
         $this->popCurrentSchemaTag();
+
+        if ($tagName === 'parameter-list') {
+            $this->finalizeParameterList();
+        }
     }
 
+    /**
+     * @return string|false
+     */
     protected function peekCurrentSchemaTag()
     {
         $keys = array_keys($this->schemasTagsStack);
@@ -389,25 +509,118 @@ class SchemaReader
         return end($this->schemasTagsStack[end($keys)]);
     }
 
+    /**
+     * @return string|false
+     */
     protected function popCurrentSchemaTag()
     {
         $keys = array_keys($this->schemasTagsStack);
-        array_pop($this->schemasTagsStack[end($keys)]);
+
+        return array_pop($this->schemasTagsStack[end($keys)]);
     }
 
+    /**
+     * @param string $tag
+     *
+     * @return void
+     */
     protected function pushCurrentSchemaTag($tag)
     {
         $keys = array_keys($this->schemasTagsStack);
         $this->schemasTagsStack[end($keys)][] = $tag;
     }
 
+    /**
+     * @return bool
+     */
     protected function isExternalSchema()
     {
         return count($this->schemasTagsStack) > 1;
     }
 
+    /**
+     * @param string $filePath
+     *
+     * @return bool
+     */
     protected function isAlreadyParsed($filePath)
     {
         return isset($this->schemasTagsStack[$filePath]);
+    }
+
+    /**
+     * @param array $attributes attributes of parameter-list tag
+     *
+     * @return void
+     */
+    private function initParameterListCollector(array $attributes): void
+    {
+        $parameterName = $this->getExpectedValue($attributes, 'name');
+
+        $this->currParameterListCollector = [
+            'name' => $parameterName,
+            'value' => [],
+        ];
+    }
+
+    /**
+     * Add a new item to the parameter list.
+     *
+     * @return void
+     */
+    private function addItemToParameterListCollector(): void
+    {
+        $this->currParameterListCollector['value'][] = [];
+    }
+
+    /**
+     * Add a paramter to the last added item in the paramter list.
+     *
+     * @param array $attributes
+     *
+     * @return void
+     */
+    private function addAttributeToParameterListItem(array $attributes)
+    {
+        $name = $this->getExpectedValue($attributes, 'name');
+        $value = $this->getExpectedValue($attributes, 'value');
+        $items = &$this->currParameterListCollector['value'];
+        end($items);
+        $currentItem = &$items[key($items)];
+        $currentItem[$name] = $value;
+    }
+
+    /**
+     * Feeds the current paramter list to its parent and clears the collector.
+     *
+     * @return void
+     */
+    private function finalizeParameterList(): void
+    {
+        $parentTag = $this->peekCurrentSchemaTag();
+        if ($parentTag === 'behavior') {
+            $this->currBehavior->addParameter($this->currParameterListCollector);
+        } else {
+            $this->throwSchemaExceptionWithLocation('Cannot add parameter list to tag <%s>', $parentTag);
+        }
+
+        $this->currParameterListCollector = null;
+    }
+
+    /**
+     * Checks if the givn array contains the given key with a non-empty value.
+     *
+     * @param array $attributes
+     * @param string $key
+     *
+     * @return string the non-empty value
+     */
+    private function getExpectedValue(array $attributes, string $key): string
+    {
+        if (empty($attributes[$key])) {
+            $this->throwSchemaExceptionWithLocation('Parameter misses expected attribute "%s"', $key);
+        }
+
+        return $attributes[$key];
     }
 }

@@ -294,7 +294,8 @@
 
     <xs:complexType name="reference">
         <xs:attribute name="local" type="column_name" use="required"/>
-        <xs:attribute name="foreign" type="column_name" use="required"/>
+        <xs:attribute name="foreign" type="column_name" use="optional"/>
+        <xs:attribute name="value" type="xs:string" use="optional"/>
     </xs:complexType>
 
     <xs:complexType name="behavior">
@@ -541,6 +542,13 @@
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
+        <xs:attribute name="referenceOnly" type="xs:boolean" default="true" use="optional">
+            <xs:annotation>
+                <xs:documentation xml:lang="en">
+                    If set to true, instructs Propel to take the tables from the external schema into account in SQL.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
     </xs:complexType>
 
     <xs:complexType name="table">
@@ -638,7 +646,7 @@
         <xs:attribute name="namespace" type="php_namespace" use="optional">
             <xs:annotation>
                 <xs:documentation xml:lang="en">
-                    The PHP 5.3 namespace to use for the generated model classes.
+                    The PHP namespace to use for the generated model classes.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
@@ -836,7 +844,7 @@
         <xs:attribute name="namespace" type="php_namespace" use="optional">
             <xs:annotation>
                 <xs:documentation xml:lang="en">
-                    The PHP 5.3 namespace to use for the generated model classes of the database. Can be overridden on a per-table basis.
+                    The PHP namespace to use for the generated model classes of the database. Can be overridden on a per-table basis.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>

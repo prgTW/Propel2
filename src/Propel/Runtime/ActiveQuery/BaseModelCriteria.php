@@ -1,42 +1,76 @@
 <?php
 
+/**
+ * MIT License. This file is part of the Propel package.
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
 namespace Propel\Runtime\ActiveQuery;
 
-use Propel\Runtime\Propel;
+use ArrayIterator;
+use IteratorAggregate;
 use Propel\Runtime\Exception\InvalidArgumentException;
 use Propel\Runtime\Exception\LogicException;
 use Propel\Runtime\Formatter\AbstractFormatter;
-use Propel\Runtime\Map\TableMap;
+use Propel\Runtime\Propel;
+use Traversable;
 
-class BaseModelCriteria extends Criteria implements \IteratorAggregate
+class BaseModelCriteria extends Criteria implements IteratorAggregate
 {
+    /**
+     * @var string|null
+     */
     protected $modelName;
 
+    /**
+     * @var string|null
+     */
     protected $modelTableMapName;
 
+    /**
+     * @var bool
+     */
+    protected $useAliasInSQL = false;
+
+    /**
+     * @var string|null
+     */
     protected $modelAlias;
 
-    /** @var TableMap */
+    /**
+     * @var \Propel\Runtime\Map\TableMap
+     */
     protected $tableMap;
 
+    /**
+     * @var \Propel\Runtime\Formatter\AbstractFormatter|null
+     */
     protected $formatter;
 
+    /**
+     * @var array
+     */
     protected $with = [];
 
+    /**
+     * @phpstan-var class-string<\Propel\Runtime\Formatter\AbstractFormatter>
+     *
+     * @var string
+     */
     protected $defaultFormatterClass = ModelCriteria::FORMAT_OBJECT;
 
     /**
      * Creates a new instance with the default capacity which corresponds to
      * the specified database.
      *
-     * @param string $dbName     The dabase name
-     * @param string $modelName  The phpName of a model, e.g. 'Book'
-     * @param string $modelAlias The alias for the model in this query, e.g. 'b'
+     * @param string|null $dbName The dabase name
+     * @param string|null $modelName The phpName of a model, e.g. 'Book'
+     * @param string|null $modelAlias The alias for the model in this query, e.g. 'b'
      */
     public function __construct($dbName = null, $modelName = null, $modelAlias = null)
     {
-        $this->setDbName($dbName);
-        $this->originalDbName = $dbName;
+        parent::__construct($dbName);
         $this->setModelName($modelName);
         $this->modelAlias = $modelAlias;
     }
@@ -46,7 +80,8 @@ class BaseModelCriteria extends Criteria implements \IteratorAggregate
      * together with the main object.
      *
      * @see with()
-     * @return ModelWith[]
+     *
+     * @return \Propel\Runtime\ActiveQuery\ModelWith[]
      */
     public function getWith()
     {
@@ -57,9 +92,9 @@ class BaseModelCriteria extends Criteria implements \IteratorAggregate
      * Sets the array of ModelWith specifying which objects must be hydrated
      * together with the main object.
      *
-     * @param    array
+     * @param array $with
      *
-     * @return $this|ModelCriteria The current object, for fluid interface
+     * @return $this The current object, for fluid interface
      */
     public function setWith($with)
     {
@@ -76,10 +111,11 @@ class BaseModelCriteria extends Criteria implements \IteratorAggregate
      * $c->setFormatter(ModelCriteria::FORMAT_ARRAY);
      * </code>
      *
-     * @param  string|AbstractFormatter $formatter a formatter class name, or a formatter instance
-     * @return $this|ModelCriteria      The current object, for fluid interface
+     * @param string|\Propel\Runtime\Formatter\AbstractFormatter $formatter a formatter class name, or a formatter instance
      *
-     * @throws InvalidArgumentException
+     * @throws \Propel\Runtime\Exception\InvalidArgumentException
+     *
+     * @return $this The current object, for fluid interface
      */
     public function setFormatter($formatter)
     {
@@ -100,11 +136,11 @@ class BaseModelCriteria extends Criteria implements \IteratorAggregate
      * Gets the formatter to use for the find() output
      * Defaults to an instance of ModelCriteria::$defaultFormatterClass, i.e. PropelObjectsFormatter
      *
-     * @return AbstractFormatter
+     * @return \Propel\Runtime\Formatter\AbstractFormatter
      */
     public function getFormatter()
     {
-        if (null === $this->formatter) {
+        if ($this->formatter === null) {
             $formatterClass = $this->defaultFormatterClass;
             $this->formatter = new $formatterClass();
         }
@@ -126,27 +162,35 @@ class BaseModelCriteria extends Criteria implements \IteratorAggregate
      * Sets the model name.
      * This also sets `this->modelTableMapName` and `this->tableMap`.
      *
-     * @param string $modelName
+     * @param string|null $modelName
      *
-     * @return $this|ModelCriteria The current object, for fluid interface
+     * @return $this The current object, for fluid interface
      */
     public function setModelName($modelName)
     {
-        if (0 === strpos($modelName, '\\')) {
-            $this->modelName = substr($modelName, 1);
-        } else {
-            $this->modelName = $modelName;
+        if (empty($modelName)) {
+            $this->modelName = null;
+
+            return $this;
         }
-        if ($this->modelName && !$this->modelTableMapName) {
+        if (strpos($modelName, '\\') === 0) {
+            $modelName = substr($modelName, 1);
+        }
+
+        $this->modelName = $modelName;
+        if (!$this->modelTableMapName) {
             $this->modelTableMapName = constant($this->modelName . '::TABLE_MAP');
         }
-        if (!$this->tableMap && $this->modelName) {
-            $this->tableMap = Propel::getServiceContainer()->getDatabaseMap($this->getDbName())->getTableByPhpName($this->modelName);
-        }
+        $dbName = $this->getDbName();
+        $this->tableMap = Propel::getServiceContainer()->getDatabaseMap($dbName)->getTableByPhpName($modelName);
+        $this->setPrimaryTableName(constant($this->modelTableMapName . '::TABLE_NAME'));
 
         return $this;
     }
 
+    /**
+     * @return string
+     */
     public function getFullyQualifiedModelName()
     {
         return '\\' . $this->getModelName();
@@ -155,10 +199,10 @@ class BaseModelCriteria extends Criteria implements \IteratorAggregate
     /**
      * Sets the alias for the model in this query
      *
-     * @param string  $modelAlias    The model alias
-     * @param boolean $useAliasInSQL Whether to use the alias in the SQL code (false by default)
+     * @param string $modelAlias The model alias
+     * @param bool $useAliasInSQL Whether to use the alias in the SQL code (false by default)
      *
-     * @return $this|ModelCriteria The current object, for fluid interface
+     * @return $this The current object, for fluid interface
      */
     public function setModelAlias($modelAlias, $useAliasInSQL = false)
     {
@@ -203,13 +247,43 @@ class BaseModelCriteria extends Criteria implements \IteratorAggregate
     }
 
     /**
+     * Return the short ClassName for class with namespace
+     *
+     * @param string $fullyQualifiedClassName The fully qualified class name
+     *
+     * @return string The short class name
+     */
+    public static function getShortName($fullyQualifiedClassName)
+    {
+        $namespaceParts = explode('\\', $fullyQualifiedClassName);
+
+        return array_pop($namespaceParts);
+    }
+
+    /**
      * Returns the TableMap object for this Criteria
      *
-     * @return TableMap
+     * @return \Propel\Runtime\Map\TableMap
      */
     public function getTableMap()
     {
         return $this->tableMap;
+    }
+
+    /**
+     * Returns the name of the table as used in the query.
+     *
+     * Either the SQL name or an alias.
+     *
+     * @return string
+     */
+    public function getTableNameInQuery()
+    {
+        if ($this->useAliasInSQL && $this->modelAlias) {
+            return $this->modelAlias;
+        }
+
+        return $this->getTableMap()->getName();
     }
 
     /**
@@ -219,23 +293,23 @@ class BaseModelCriteria extends Criteria implements \IteratorAggregate
      * constructed on a Propel\Runtime\Collection\PropelCollection.
      * Compulsory for implementation of \IteratorAggregate.
      *
-     * @return \Traversable
+     * @throws \Propel\Runtime\Exception\LogicException
      *
-     * @throws LogicException
+     * @return \Traversable
      */
     public function getIterator()
     {
         $res = $this->find(null); // use the default connection
-        if ($res instanceof \IteratorAggregate) {
+        if ($res instanceof IteratorAggregate) {
             return $res->getIterator();
         }
-        if ($res instanceof \Traversable) {
+        if ($res instanceof Traversable) {
             return $res;
         }
         if (is_array($res)) {
-            return new \ArrayIterator($res);
+            return new ArrayIterator($res);
         }
+
         throw new LogicException('The current formatter doesn\'t return an iterable result');
     }
-
 }

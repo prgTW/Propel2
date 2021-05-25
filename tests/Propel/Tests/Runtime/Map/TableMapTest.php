@@ -1,33 +1,37 @@
 <?php
 
 /**
- * This file is part of the Propel package.
+ * MIT License. This file is part of the Propel package.
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
- *
- * @license MIT License
  */
 
 namespace Propel\Tests\Runtime\Map;
 
-use Propel\Runtime\Map\DatabaseMap;
-use Propel\Runtime\Map\RelationMap;
+use Exception;
+use Propel\Runtime\Collection\ObjectCollection;
 use Propel\Runtime\Map\ColumnMap;
-use Propel\Runtime\Map\TableMap;
+use Propel\Runtime\Map\DatabaseMap;
 use Propel\Runtime\Map\Exception\ColumnNotFoundException;
+use Propel\Runtime\Map\Exception\RelationNotFoundException;
+use Propel\Runtime\Map\RelationMap;
+use Propel\Runtime\Map\TableMap;
 use Propel\Tests\TestCase;
 
 /**
  * Test class for TableMap.
  *
  * @author François Zaninotto
- * @version    $Id$
+ * @version $Id$
  */
 class TableMapTest extends TestCase
 {
     protected $databaseMap;
 
-    protected function setUp()
+    /**
+     * @return void
+     */
+    protected function setUp(): void
     {
         parent::setUp();
         $this->databaseMap = new DatabaseMap('foodb');
@@ -35,12 +39,18 @@ class TableMapTest extends TestCase
         $this->tmap = new TableMap($this->tableName, $this->databaseMap);
     }
 
-    protected function tearDown()
+    /**
+     * @return void
+     */
+    protected function tearDown(): void
     {
         // nothing to do for now
         parent::tearDown();
     }
 
+    /**
+     * @return void
+     */
     public function testConstructor()
     {
         $this->assertEquals([], $this->tmap->getColumns(), 'A new table map has no columns');
@@ -54,6 +64,9 @@ class TableMapTest extends TestCase
         }
     }
 
+    /**
+     * @return void
+     */
     public function testProperties()
     {
         $tmap = new TableMap();
@@ -67,6 +80,9 @@ class TableMapTest extends TestCase
         }
     }
 
+    /**
+     * @return void
+     */
     public function testHasColumn()
     {
         $this->assertFalse($this->tmap->hasColumn('BAR'), 'hascolumn() returns false when the column is not in the table map');
@@ -78,6 +94,9 @@ class TableMapTest extends TestCase
         $this->assertTrue($this->tmap->hasColumn($column), 'hascolumn() accepts a ColumnMap object as parameter');
     }
 
+    /**
+     * @return void
+     */
     public function testGetColumn()
     {
         $column = $this->tmap->addColumn('BAR', 'Bar', 'INTEGER');
@@ -85,7 +104,8 @@ class TableMapTest extends TestCase
         try {
             $this->tmap->getColumn('FOO');
             $this->fail('getColumn throws an exception when called on an inexistent column');
-        } catch (ColumnNotFoundException $e) {}
+        } catch (ColumnNotFoundException $e) {
+        }
             $this->assertEquals($column, $this->tmap->getColumn('foo.bar'), 'getColumn accepts a denormalized column name');
         try {
             $this->tmap->getColumn('foo.bar', false);
@@ -94,6 +114,9 @@ class TableMapTest extends TestCase
         }
     }
 
+    /**
+     * @return void
+     */
     public function testGetColumnByPhpName()
     {
         $column = $this->tmap->addColumn('BAR_BAZ', 'BarBaz', 'INTEGER');
@@ -105,6 +128,9 @@ class TableMapTest extends TestCase
         }
     }
 
+    /**
+     * @return void
+     */
     public function testGetColumns()
     {
         $this->assertEquals([], $this->tmap->getColumns(), 'getColumns returns an empty array when no columns were added');
@@ -113,6 +139,21 @@ class TableMapTest extends TestCase
         $this->assertEquals(['BAR' => $column1, 'BAZ' => $column2], $this->tmap->getColumns(), 'getColumns returns the columns indexed by name');
     }
 
+    /**
+     * @return void
+     */
+    public function testFindColumnsByName()
+    {
+        $this->assertNull($this->tmap->findColumnByName('LeName'), 'findColumnByName() should return null on empty map');
+        $column = $this->tmap->addColumn('BAR', 'Bar', 'INTEGER');
+        $this->assertEquals($column, $this->tmap->findColumnByName('BAR'), 'findColumnByName() should find column if regular name matches');
+        $this->assertEquals($column, $this->tmap->findColumnByName('Bar'), 'findColumnByName() should find column if phpName matches');
+        $this->assertEquals($column, $this->tmap->findColumnByName('table.bar'), 'findColumnByName() should try normalizing input name');
+    }
+
+    /**
+     * @return void
+     */
     public function testAddPrimaryKey()
     {
         $column1 = $this->tmap->addPrimaryKey('BAR', 'Bar', 'INTEGER');
@@ -127,6 +168,9 @@ class TableMapTest extends TestCase
         $this->assertTrue($column5->isPrimaryKey(), 'Columns added by way of addForeignPrimaryKey() are primary keys');
     }
 
+    /**
+     * @return void
+     */
     public function testGetPrimaryKeys()
     {
         $this->assertEquals([], $this->tmap->getPrimaryKeys(), 'getPrimaryKeys() returns an empty array by default');
@@ -136,6 +180,9 @@ class TableMapTest extends TestCase
         $this->assertEquals($expected, $this->tmap->getPrimaryKeys(), 'getPrimaryKeys() returns an array of the table primary keys');
     }
 
+    /**
+     * @return void
+     */
     public function testAddForeignKey()
     {
         $column1 = $this->tmap->addForeignKey('BAR', 'Bar', 'INTEGER', 'Table1', 'column1');
@@ -150,6 +197,9 @@ class TableMapTest extends TestCase
         $this->assertTrue($column5->isForeignKey(), 'Columns added by way of addForeignPrimaryKey() are foreign keys');
     }
 
+    /**
+     * @return void
+     */
     public function testGetForeignKeys()
     {
         $this->assertEquals([], $this->tmap->getForeignKeys(), 'getForeignKeys() returns an empty array by default');
@@ -160,13 +210,18 @@ class TableMapTest extends TestCase
     }
 
     /**
-     * @expectedException \Propel\Runtime\Map\Exception\RelationNotFoundException
+     * @return void
      */
     public function testLoadWrongRelations()
     {
+        $this->expectException(RelationNotFoundException::class);
+
         $this->tmap->getRelation('Bar');
     }
 
+    /**
+     * @return void
+     */
     public function testLazyLoadRelations()
     {
         $foreigntmap = new BarTableMap();
@@ -177,6 +232,9 @@ class TableMapTest extends TestCase
         $this->assertEquals($rmap, $localtmap->rmap, 'getRelation() returns the relations lazy loaded by buildRelations()');
     }
 
+    /**
+     * @return void
+     */
     public function testAddRelation()
     {
         $foreigntmap1 = new TableMap('bar');
@@ -201,6 +259,9 @@ class TableMapTest extends TestCase
         $this->assertEquals($expectedRelations, $this->tmap->getRelations(), 'getRelations() returns an associative array of all the relations');
     }
 
+    /**
+     * @return void
+     */
     public function testPrimaryStringAddColumn()
     {
         $this->assertFalse($this->tmap->hasPrimaryStringColumn(), 'hasPrimaryStringColumn() returns false while none set.');
@@ -216,6 +277,9 @@ class TableMapTest extends TestCase
         $this->assertEquals($column, $this->tmap->getPrimaryStringColumn(), 'getPrimaryStringColumn() returns correct column.');
     }
 
+    /**
+     * @return void
+     */
     public function testPrimaryStringAddConfiguredColumn()
     {
         $this->assertFalse($this->tmap->hasPrimaryStringColumn(), 'hasPrimaryStringColumn() returns false while none set.');
@@ -230,16 +294,42 @@ class TableMapTest extends TestCase
         $this->assertEquals($column, $this->tmap->getPrimaryStringColumn(), 'getPrimaryStringColumn() returns correct column.');
     }
 
-    public function testGetCollectionClassName()
+    /**
+     * @return void
+     */
+    public function testGetCollectionClassNameReturnsObjectCollection()
     {
-        $this->assertEquals('\Propel\Runtime\Collection\ObjectCollection', $this->tmap->getCollectionClassName());
-
-        $this->tmap->setClassName('Propel\Tests\Runtime\Map\Test');
-        $this->assertEquals('Propel\Tests\Runtime\Map\TestCollection', $this->tmap->getCollectionClassName());
+        $this->assertEquals(ObjectCollection::class, $this->tmap->getCollectionClassName());
+    }
+    
+    /**
+     * @return void
+     */
+    public function testGetCollectionClassNameReturnsCustomCollection()
+    {
+        $classWithCollection = __NAMESPACE__ . '\ExtendingTest';
+        $this->tmap->setClassName($classWithCollection);
+        $this->assertEquals(ExtendingTestCollection::class, $this->tmap->getCollectionClassName());
+    }
+        
+    /**
+     * @return void
+     */
+    public function testGetCollectionClassNameReturnsOnlyCollections()
+    {
+        $classWithUnrelatedCollection = __NAMESPACE__ . '\NonExtendingTest';
+        $this->tmap->setClassName($classWithUnrelatedCollection);
+        $this->assertEquals(ObjectCollection::class, $this->tmap->getCollectionClassName());
     }
 }
 
-class TestCollection extends \Propel\Runtime\Collection\ObjectCollection {}
+class ExtendingTestCollection extends ObjectCollection
+{
+}
+
+class NonExtendingTestCollection
+{
+}
 
 class TestableTableMap extends TableMap
 {
@@ -257,6 +347,10 @@ class TestableTableMap extends TableMap
 class FooTableMap extends TableMap
 {
     public $rmap;
+
+    /**
+     * @return void
+     */
     public function buildRelations()
     {
         $this->rmap = $this->addRelation('Bar', 'Bar', RelationMap::MANY_TO_ONE);
@@ -265,6 +359,9 @@ class FooTableMap extends TableMap
 
 class BarTableMap extends TableMap
 {
+    /**
+     * @return void
+     */
     public function initialize()
     {
         $this->setName('bar');

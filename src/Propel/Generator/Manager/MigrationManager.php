@@ -1,24 +1,24 @@
 <?php
 
 /**
- * This file is part of the Propel package.
+ * MIT License. This file is part of the Propel package.
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
- *
- * @license MIT License
  */
 
 namespace Propel\Generator\Manager;
 
+use Exception;
+use PDO;
+use PDOException;
+use Propel\Generator\Builder\Util\PropelTemplate;
 use Propel\Generator\Exception\InvalidArgumentException;
 use Propel\Generator\Model\Column;
 use Propel\Generator\Model\Database;
 use Propel\Generator\Model\Table;
-use Propel\Generator\Platform\PlatformInterface;
 use Propel\Generator\Util\SqlParser;
 use Propel\Runtime\Adapter\AdapterFactory;
 use Propel\Runtime\Connection\ConnectionFactory;
-use Propel\Runtime\Connection\ConnectionInterface;
 
 /**
  * Service class for preparing and executing migrations
@@ -33,7 +33,7 @@ class MigrationManager extends AbstractManager
     protected $connections = [];
 
     /**
-     * @var ConnectionInterface[]
+     * @var \Propel\Runtime\Connection\ConnectionInterface[]
      */
     protected $adapterConnections = [];
 
@@ -46,6 +46,8 @@ class MigrationManager extends AbstractManager
      * Set the database connection settings
      *
      * @param array $connections
+     *
+     * @return void
      */
     public function setConnections($connections)
     {
@@ -62,6 +64,13 @@ class MigrationManager extends AbstractManager
         return $this->connections;
     }
 
+    /**
+     * @param string $datasource
+     *
+     * @throws \Propel\Generator\Exception\InvalidArgumentException
+     *
+     * @return array
+     */
     public function getConnection($datasource)
     {
         if (!isset($this->connections[$datasource])) {
@@ -72,8 +81,9 @@ class MigrationManager extends AbstractManager
     }
 
     /**
-     * @param $datasource
-     * @return ConnectionInterface
+     * @param string $datasource
+     *
+     * @return \Propel\Runtime\Connection\ConnectionInterface
      */
     public function getAdapterConnection($datasource)
     {
@@ -87,12 +97,13 @@ class MigrationManager extends AbstractManager
     }
 
     /**
-     * @param  string            $datasource
-     * @return PlatformInterface
+     * @param string $datasource
+     *
+     * @return \Propel\Generator\Platform\PlatformInterface
      */
     public function getPlatform($datasource)
     {
-        $params  = $this->getConnection($datasource);
+        $params = $this->getConnection($datasource);
         $adapter = $params['adapter'];
 
         $class = '\\Propel\\Generator\\Platform\\' . ucfirst($adapter) . 'Platform';
@@ -104,6 +115,8 @@ class MigrationManager extends AbstractManager
      * Set the migration table name
      *
      * @param string $migrationTable
+     *
+     * @return void
      */
     public function setMigrationTable($migrationTable)
     {
@@ -120,11 +133,16 @@ class MigrationManager extends AbstractManager
         return $this->migrationTable;
     }
 
+    /**
+     * @throws \Exception
+     *
+     * @return int[]
+     */
     public function getAllDatabaseVersions()
     {
         $connections = $this->getConnections();
         if (!$connections) {
-            throw new \Exception('You must define database connection settings in a buildtime-conf.xml file to use migrations');
+            throw new Exception('You must define database connection settings in a buildtime-conf.xml file to use migrations');
         }
 
         $migrationTimestamps = [];
@@ -144,7 +162,7 @@ class MigrationManager extends AbstractManager
                 while ($migrationTimestamp = $stmt->fetchColumn()) {
                     $migrationTimestamps[] = $migrationTimestamp;
                 }
-            } catch (\PDOException $e) {
+            } catch (PDOException $e) {
                 $this->createMigrationTable($name);
                 $migrationTimestamps = [];
             }
@@ -155,6 +173,11 @@ class MigrationManager extends AbstractManager
         return $migrationTimestamps;
     }
 
+    /**
+     * @param string $datasource
+     *
+     * @return bool
+     */
     public function migrationTableExists($datasource)
     {
         $conn = $this->getAdapterConnection($datasource);
@@ -164,13 +187,21 @@ class MigrationManager extends AbstractManager
             $stmt->execute();
 
             return true;
-        } catch (\PDOException $e) {
+        } catch (PDOException $e) {
             return false;
         }
     }
 
+    /**
+     * @param string $datasource
+     *
+     * @throws \Exception
+     *
+     * @return void
+     */
     public function createMigrationTable($datasource)
     {
+        /** @var \Propel\Generator\Platform\DefaultPlatform $platform */
         $platform = $this->getPlatform($datasource);
         // modelize the table
         $database = new Database($datasource);
@@ -181,7 +212,7 @@ class MigrationManager extends AbstractManager
 
         $column = new Column('version');
         $column->getDomain()->copy($platform->getDomainForType('INTEGER'));
-        $column->setDefaultValue(0);
+        $column->setDefaultValue('0');
 
         $table->addColumn($column);
         // insert the table into the database
@@ -190,38 +221,55 @@ class MigrationManager extends AbstractManager
         $res = SqlParser::executeString($statements, $conn);
 
         if (!$res) {
-            throw new \Exception(sprintf('Unable to create migration table in datasource "%s"', $datasource));
+            throw new Exception(sprintf('Unable to create migration table in datasource "%s"', $datasource));
         }
     }
 
+    /**
+     * @param string $datasource
+     * @param int $timestamp
+     *
+     * @return void
+     */
     public function removeMigrationTimestamp($datasource, $timestamp)
     {
         $platform = $this->getPlatform($datasource);
         $conn = $this->getAdapterConnection($datasource);
         $conn->transaction(function () use ($conn, $platform, $timestamp) {
-            $sql = sprintf('DELETE FROM %s WHERE %s = ?',
+            $sql = sprintf(
+                'DELETE FROM %s WHERE %s = ?',
                 $this->getMigrationTable(),
                 $platform->doQuoting('version')
             );
             $stmt = $conn->prepare($sql);
-            $stmt->bindParam(1, $timestamp, \PDO::PARAM_INT);
+            $stmt->bindParam(1, $timestamp, PDO::PARAM_INT);
             $stmt->execute();
         });
     }
 
+    /**
+     * @param string $datasource
+     * @param int $timestamp
+     *
+     * @return void
+     */
     public function updateLatestMigrationTimestamp($datasource, $timestamp)
     {
         $platform = $this->getPlatform($datasource);
         $conn = $this->getAdapterConnection($datasource);
-        $sql = sprintf('INSERT INTO %s (%s) VALUES (?)',
+        $sql = sprintf(
+            'INSERT INTO %s (%s) VALUES (?)',
             $this->getMigrationTable(),
             $platform->doQuoting('version')
         );
         $stmt = $conn->prepare($sql);
-        $stmt->bindParam(1, $timestamp, \PDO::PARAM_INT);
+        $stmt->bindParam(1, $timestamp, PDO::PARAM_INT);
         $stmt->execute();
     }
 
+    /**
+     * @return int[]
+     */
     public function getMigrationTimestamps()
     {
         $path = $this->getWorkingDirectory();
@@ -230,8 +278,8 @@ class MigrationManager extends AbstractManager
         if (is_dir($path)) {
             $files = scandir($path);
             foreach ($files as $file) {
-                if (preg_match('/^PropelMigration_(\d+)\.php$/', $file, $matches)) {
-                    $migrationTimestamps[] = (integer) $matches[1];
+                if (preg_match('/^PropelMigration_(\d+).*\.php$/', $file, $matches)) {
+                    $migrationTimestamps[] = (int)$matches[1];
                 }
             }
         }
@@ -239,6 +287,9 @@ class MigrationManager extends AbstractManager
         return $migrationTimestamps;
     }
 
+    /**
+     * @return int[]
+     */
     public function getValidMigrationTimestamps()
     {
         $migrationTimestamps = array_diff($this->getMigrationTimestamps(), $this->getAllDatabaseVersions());
@@ -247,11 +298,17 @@ class MigrationManager extends AbstractManager
         return $migrationTimestamps;
     }
 
+    /**
+     * @return bool
+     */
     public function hasPendingMigrations()
     {
-        return [] !== $this->getValidMigrationTimestamps();
+        return $this->getValidMigrationTimestamps() !== [];
     }
 
+    /**
+     * @return int[]
+     */
     public function getAlreadyExecutedMigrationTimestamps()
     {
         $migrationTimestamps = array_intersect($this->getMigrationTimestamps(), $this->getAllDatabaseVersions());
@@ -260,6 +317,9 @@ class MigrationManager extends AbstractManager
         return $migrationTimestamps;
     }
 
+    /**
+     * @return int
+     */
     public function getFirstUpMigrationTimestamp()
     {
         $validTimestamps = $this->getValidMigrationTimestamps();
@@ -267,102 +327,150 @@ class MigrationManager extends AbstractManager
         return array_shift($validTimestamps);
     }
 
+    /**
+     * @return int|null
+     */
     public function getFirstDownMigrationTimestamp()
     {
         return $this->getOldestDatabaseVersion();
     }
 
-    public static function getMigrationClassName($timestamp)
+    /**
+     * @param int $timestamp
+     * @param string $suffix
+     *
+     * @return string
+     */
+    public function getMigrationClassName($timestamp, $suffix = '')
     {
-        return sprintf('PropelMigration_%d', $timestamp);
+        $className = sprintf('PropelMigration_%d', $timestamp);
+        if ($suffix === '') {
+            $suffix = $this->findMigrationClassNameSuffix($timestamp);
+        }
+        if ($suffix !== '') {
+            $className .= '_' . $suffix;
+        }
+
+        return $className;
     }
 
+    /**
+     * @param int $timestamp
+     *
+     * @return string
+     */
+    public function findMigrationClassNameSuffix($timestamp)
+    {
+        $suffix = '';
+        $path = $this->getWorkingDirectory();
+        if (is_dir($path)) {
+            $files = scandir($path);
+            foreach ($files as $file) {
+                if (preg_match('/^PropelMigration_' . $timestamp . '(_)?(.*)\.php$/', $file, $matches)) {
+                    $suffix = (string)$matches[2];
+                }
+            }
+        }
+
+        return $suffix;
+    }
+
+    /**
+     * @param int $timestamp
+     *
+     * @return object
+     */
     public function getMigrationObject($timestamp)
     {
         $className = $this->getMigrationClassName($timestamp);
-        require_once sprintf('%s/%s.php',
+        $filename = sprintf(
+            '%s/%s.php',
             $this->getWorkingDirectory(),
             $className
         );
+        require_once $filename;
 
         return new $className();
     }
 
-    public function getMigrationClassBody($migrationsUp, $migrationsDown, $timestamp, $comment = "")
+    /**
+     * @param string[] $migrationsUp
+     * @param string[] $migrationsDown
+     * @param int $timestamp
+     * @param string $comment
+     * @param string $suffix
+     *
+     * @return string
+     */
+    public function getMigrationClassBody($migrationsUp, $migrationsDown, $timestamp, $comment = '', $suffix = '')
     {
-        $timeInWords = date('Y-m-d H:i:s', $timestamp);
-        $migrationAuthor = ($author = $this->getUser()) ? 'by ' . $author : '';
-        $migrationClassName = $this->getMigrationClassName($timestamp);
-        $migrationUpString = var_export($migrationsUp, true);
-        $migrationDownString = var_export($migrationsDown, true);
-        $commentString = var_export($comment, true);
-        $migrationClassBody = <<<EOP
-<?php
+        $connectionToVariableName = self::buildConnectionToVariableNameMap($migrationsUp, $migrationsDown);
 
-use Propel\Generator\Manager\MigrationManager;
+        $vars = [
+            'timestamp' => $timestamp,
+            'commentString' => addcslashes($comment, ','),
+            'suffix' => $suffix,
+            'timeInWords' => date('Y-m-d H:i:s', $timestamp),
+            'migrationAuthor' => ($author = $this->getUser()) ? 'by ' . $author : '',
+            'migrationClassName' => $this->getMigrationClassName($timestamp, $suffix),
+            'migrationsUp' => $migrationsUp,
+            'migrationsDown' => $migrationsDown,
+            'connectionToVariableName' => $connectionToVariableName,
+        ];
 
-/**
- * Data object containing the SQL and PHP code to migrate the database
- * up to version $timestamp.
- * Generated on $timeInWords $migrationAuthor
- */
-class $migrationClassName
-{
-    public \$comment = $commentString;
+        $template = new PropelTemplate();
+        $filePath = implode(DIRECTORY_SEPARATOR, [__DIR__, 'templates', 'migration_template.php']);
+        $template->setTemplateFile($filePath);
 
-    public function preUp(MigrationManager \$manager)
-    {
-        // add the pre-migration code here
-    }
-
-    public function postUp(MigrationManager \$manager)
-    {
-        // add the post-migration code here
-    }
-
-    public function preDown(MigrationManager \$manager)
-    {
-        // add the pre-migration code here
-    }
-
-    public function postDown(MigrationManager \$manager)
-    {
-        // add the post-migration code here
+        return $template->render($vars);
     }
 
     /**
-     * Get the SQL statements for the Up migration
+     *  * Builds an array mapping connection names to a string that can be used as a php variable name.
      *
-     * @return array list of the SQL strings to execute for the Up migration
-     *               the keys being the datasources
+     * @param array $migrationsUp
+     * @param array $migrationsDown
+     *
+     * @return array
      */
-    public function getUpSQL()
+    protected static function buildConnectionToVariableNameMap(array $migrationsUp, array $migrationsDown): array
     {
-        return $migrationUpString;
+        $connectionToVariableName = [];
+        foreach ([$migrationsUp, $migrationsDown] as $migrations) {
+            $connectionNames = array_keys($migrations);
+            foreach ($connectionNames as $index => $connectionName) {
+                if (array_key_exists($connectionName, $connectionToVariableName)) {
+                    continue;
+                }
+                $alphNums = preg_replace('/\W/', '', $connectionName);
+                if (strlen($alphNums) === 0) {
+                    $alphNums = $index;
+                }
+                $variableName = '$connection_' . $alphNums;
+                while (in_array($variableName, $connectionToVariableName, true)) {
+                    $variableName .= 'I';
+                }
+                $connectionToVariableName[$connectionName] = $variableName;
+            }
+        }
+
+        return $connectionToVariableName;
     }
 
     /**
-     * Get the SQL statements for the Down migration
+     * @param int $timestamp
+     * @param string $suffix
      *
-     * @return array list of the SQL strings to execute for the Down migration
-     *               the keys being the datasources
+     * @return string
      */
-    public function getDownSQL()
+    public function getMigrationFileName($timestamp, $suffix = '')
     {
-        return $migrationDownString;
+        return sprintf('%s.php', $this->getMigrationClassName($timestamp, $suffix));
     }
 
-}
-EOP;
-
-        return $migrationClassBody;
-    }
-
-    public static function getMigrationFileName($timestamp)
-    {
-        return sprintf('%s.php', self::getMigrationClassName($timestamp));
-    }
-
+    /**
+     * @return string
+     */
     public static function getUser()
     {
         if (function_exists('posix_getuid')) {
@@ -375,9 +483,15 @@ EOP;
         return '';
     }
 
+    /**
+     * @return int|null
+     */
     public function getOldestDatabaseVersion()
     {
         $versions = $this->getAllDatabaseVersions();
+        if (!$versions) {
+            return null;
+        }
 
         return array_pop($versions);
     }

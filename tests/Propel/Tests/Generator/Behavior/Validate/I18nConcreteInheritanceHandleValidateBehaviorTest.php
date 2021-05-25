@@ -1,16 +1,19 @@
 <?php
 
 /**
- * This file is part of the Propel package.
+ * MIT License. This file is part of the Propel package.
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
- *
- * @license MIT License
  */
 
 namespace Propel\Tests\Generator\Behavior\Validate;
 
 use Propel\Tests\Helpers\Bookstore\BookstoreTestBase;
+use ReflectionMethod;
+use Symfony\Component\Validator\Constraints\NotNull;
+use Symfony\Component\Validator\Constraints\Regex;
+use Symfony\Component\Validator\Constraints\Type;
+use Symfony\Component\Validator\Mapping\Factory\LazyLoadingMetadataFactory;
 use Symfony\Component\Validator\Mapping\Loader\StaticMethodLoader;
 
 /**
@@ -25,17 +28,17 @@ class I18nConcreteInheritanceHandleValidateBehaviorTest extends BookstoreTestBas
 {
     protected $metadataFactory;
 
-    public function assertPreConditions()
+    /**
+     * @return void
+     */
+    public function assertPreConditions(): void
     {
-        //if SF >= 2.5 use new validator classes
-        if(class_exists('Symfony\\Component\\Validator\\Validator\\RecursiveValidator')) {
-            $this->metadataFactory = new \Symfony\Component\Validator\Mapping\Factory\LazyLoadingMetadataFactory(new StaticMethodLoader());
-        } else {
-            $this->metadataFactory = new \Symfony\Component\Validator\Mapping\ClassMetadataFactory(new StaticMethodLoader());
-        }
-
+        $this->metadataFactory = new LazyLoadingMetadataFactory(new StaticMethodLoader());
     }
 
+    /**
+     * @return void
+     */
     public function testI18nBehaviorHandlesValidateBehavior()
     {
         $class = 'Propel\Tests\Bookstore\Behavior\ValidateTriggerBook';
@@ -69,6 +72,9 @@ class I18nConcreteInheritanceHandleValidateBehaviorTest extends BookstoreTestBas
         $this->assertInstanceOf('Symfony\Component\Validator\Constraints\NotNull', $i18nConstraints[0]);
     }
 
+    /**
+     * @return void
+     */
     public function testConcreteInheritanceBehaviorHandlesValidateBehavior()
     {
         $fiction = 'Propel\Tests\Bookstore\Behavior\ValidateTriggerFiction';
@@ -80,15 +86,30 @@ class I18nConcreteInheritanceHandleValidateBehaviorTest extends BookstoreTestBas
         $this->assertTrue(in_array('isbn', $fictionMetadata->getConstrainedProperties(), true));
 
         $fictionMetadatas = $fictionMetadata->getPropertyMetadata('isbn');
-        $this->assertCount(1, $fictionMetadatas);
 
-        $fictionConstraints = $fictionMetadatas[0]->getConstraints();
-        $this->assertCount(2, $fictionConstraints);
-        $this->assertTrue(in_array('ValidateTriggerFiction', $fictionConstraints[0]->groups));
-        $this->assertTrue(in_array('ValidateTriggerBook', $fictionConstraints[0]->groups));
-        $this->assertTrue(in_array('ValidateTriggerFiction', $fictionConstraints[1]->groups));
-        $this->assertInstanceOf('Symfony\Component\Validator\Constraints\Regex', $fictionConstraints[0]);
-        $this->assertInstanceOf('Symfony\Component\Validator\Constraints\Regex', $fictionConstraints[1]);
+        // 1st is for ValidateTriggerFiction (base)
+        // 2nd is for ValidateTriggerBook (base)
+        // I'm not sure if this is needed. We should not care about validator internals
+        $this->assertCount(2, $fictionMetadatas);
+
+        $expectedValidatorGroups = [
+            'ValidateTriggerFiction',
+            'ValidateTriggerBook',
+        ];
+
+        // iterate over metadatas and constarints.
+        // If constraint match with expected constraint -> remove it form expectations list
+        // We are looking for our regex validations
+        foreach ($fictionMetadatas as $fictionmetadata) {
+            /** @var \Symfony\Component\Validator\Mapping\PropertyMetadata $constraint */
+            foreach ($fictionmetadata->getConstraints() as $constraint) {
+                if ($constraint instanceof Regex) {
+                    $expectedValidatorGroups = array_diff($expectedValidatorGroups, $constraint->groups);
+                }
+            }
+        }
+
+        $this->assertEmpty($expectedValidatorGroups);
 
         $comic = 'Propel\Tests\Bookstore\Behavior\ValidateTriggerComic';
 
@@ -100,32 +121,56 @@ class I18nConcreteInheritanceHandleValidateBehaviorTest extends BookstoreTestBas
         $this->assertTrue(in_array('bar', $comicMetadata->getConstrainedProperties(), true));
 
         $comicMetadatas['isbn'] = $comicMetadata->getPropertyMetadata('isbn');
-        $comicMetadatas['bar']  = $comicMetadata->getPropertyMetadata('bar');
-        $this->assertCount(1, $comicMetadatas['isbn']);
-        $this->assertCount(1, $comicMetadatas['bar']);
+        $comicMetadatas['bar'] = $comicMetadata->getPropertyMetadata('bar');
 
-        $comicConstraintsIsbn = $comicMetadatas['isbn'][0]->getConstraints();
-        $this->assertCount(2, $comicConstraintsIsbn);
-        $this->assertTrue(in_array('ValidateTriggerComic', $comicConstraintsIsbn[0]->groups));
-        $this->assertTrue(in_array('ValidateTriggerBook', $comicConstraintsIsbn[0]->groups));
-        $this->assertTrue(in_array('ValidateTriggerComic', $comicConstraintsIsbn[1]->groups));
-        $this->assertInstanceOf('Symfony\Component\Validator\Constraints\Regex', $comicConstraintsIsbn[0]);
-        $this->assertInstanceOf('Symfony\Component\Validator\Constraints\Regex', $comicConstraintsIsbn[1]);
+        $expectedComicValidators = [
+            'ValidateTriggerComic',
+            'ValidateTriggerComic',
+            'ValidateTriggerBook',
+        ];
 
-        $comicConstraintsBar = $comicMetadatas['bar'][0]->getConstraints();
-        $this->assertCount(2,$comicConstraintsBar);
-        $this->assertInstanceOf('Symfony\Component\Validator\Constraints\NotNull', $comicConstraintsBar[0]);
-        $this->assertInstanceOf('Symfony\Component\Validator\Constraints\Type', $comicConstraintsBar[1]);
+        foreach ($comicMetadatas['isbn'] as $metadata) {
+            /** @var \Symfony\Component\Validator\Mapping\PropertyMetadata $metadata */
+            foreach ($metadata->getConstraints() as $constraint) {
+                if ($constraint instanceof Regex) {
+                    $expectedComicValidators = array_diff($expectedComicValidators, $constraint->groups);
+                }
+            }
+        }
+
+        $this->assertEmpty($expectedComicValidators);
+
+        $comicMetadataBar = $comicMetadatas['bar'];
+
+        $expectedComicBarValidatorTypes = [
+            0 => 'Symfony\Component\Validator\Constraints\NotNull',
+            1 => 'Symfony\Component\Validator\Constraints\Type',
+        ];
+        foreach ($comicMetadataBar as $metadata) {
+            $constraints = $metadata->getConstraints();
+            foreach ($constraints as $constraint) {
+                if ($constraint instanceof NotNull) {
+                    unset($expectedComicBarValidatorTypes[0]);
+                } elseif ($constraint instanceof Type) {
+                    unset($expectedComicBarValidatorTypes[1]);
+                }
+            }
+        }
+
+        $this->assertEmpty($expectedComicBarValidatorTypes);
     }
 
+    /**
+     * @return void
+     */
     public function testConcreteInheritanceAndI18nBehaviorHandlesValidateBehavior()
     {
         $classes = ['ValidateTriggerFictionI18n', 'ValidateTriggerComicI18n'];
 
         foreach ($classes as $class) {
-            $this->checkClassHasValidateBehavior('Propel\Tests\Bookstore\Behavior\\'.$class);
+            $this->checkClassHasValidateBehavior('Propel\Tests\Bookstore\Behavior\\' . $class);
 
-            $classMetadata = $this->metadataFactory->getMetadataFor('Propel\Tests\Bookstore\Behavior\\'.$class);
+            $classMetadata = $this->metadataFactory->getMetadataFor('Propel\Tests\Bookstore\Behavior\\' . $class);
             $this->assertCount(1, $classMetadata->getConstrainedProperties());
             $this->assertTrue(in_array('title', $classMetadata->getConstrainedProperties(), true));
 
@@ -139,6 +184,9 @@ class I18nConcreteInheritanceHandleValidateBehaviorTest extends BookstoreTestBas
         }
     }
 
+    /**
+     * @return void
+     */
     protected function checkClassHasValidateBehavior($class)
     {
         $this->assertTrue(method_exists($class, 'validate'), "Class $class has no validate() method");
@@ -146,7 +194,7 @@ class I18nConcreteInheritanceHandleValidateBehaviorTest extends BookstoreTestBas
         $this->assertTrue(method_exists($class, 'loadValidatorMetadata'), "Class $class has no loadValidatorMetadata() method");
         $this->assertClassHasAttribute('alreadyInValidation', $class, "Class $class has no 'alreadyInValidation' property");
         $this->assertClassHasAttribute('validationFailures', $class, "Class $class has no 'validationFailures' property");
-        $method = new \ReflectionMethod($class, 'loadValidatorMetadata');
+        $method = new ReflectionMethod($class, 'loadValidatorMetadata');
         $this->assertTrue($method->isStatic(), "Method loadValidatorMetadata() of class $class isn't static");
     }
 }

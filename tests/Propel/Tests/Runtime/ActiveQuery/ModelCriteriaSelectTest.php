@@ -1,21 +1,22 @@
 <?php
 
 /**
- * This file is part of the Propel package.
+ * MIT License. This file is part of the Propel package.
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
- *
- * @license MIT License
  */
 
 namespace Propel\Tests\Runtime\ActiveQuery;
 
-use Propel\Tests\Bookstore\Map\AuthorTableMap;
-use Propel\Tests\Bookstore\BookQuery;
-use Propel\Tests\Helpers\Bookstore\BookstoreTestBase;
-use Propel\Tests\Helpers\Bookstore\BookstoreDataPopulator;
-
 use Propel\Runtime\ActiveQuery\ModelCriteria;
+use Propel\Runtime\Collection\Collection;
+use Propel\Runtime\Exception\PropelException;
+use Propel\Runtime\Formatter\OnDemandFormatter;
+use Propel\Tests\Bookstore\BookQuery;
+use Propel\Tests\Bookstore\Map\AuthorTableMap;
+use Propel\Tests\Bookstore\Map\BookTableMap;
+use Propel\Tests\Helpers\Bookstore\BookstoreDataPopulator;
+use Propel\Tests\Helpers\Bookstore\BookstoreTestBase;
 
 /**
  * Test class for ModelCriteria select() method.
@@ -27,23 +28,30 @@ use Propel\Runtime\ActiveQuery\ModelCriteria;
 class ModelCriteriaSelectTest extends BookstoreTestBase
 {
     /**
-     * @expectedException \Propel\Runtime\Exception\PropelException
+     * @return void
      */
     public function testSelectThrowsExceptionWhenCalledWithAnEmptyString()
     {
+        $this->expectException(PropelException::class);
+
         $c = new ModelCriteria('bookstore', 'Propel\Tests\Bookstore\Book');
         $c->select('');
     }
 
     /**
-     * @expectedException \Propel\Runtime\Exception\PropelException
+     * @return void
      */
     public function testSelectThrowsExceptionWhenCalledWithAnEmptyArray()
     {
+        $this->expectException(PropelException::class);
+
         $c = new ModelCriteria('bookstore', 'Propel\Tests\Bookstore\Book');
         $c->select([]);
     }
 
+    /**
+     * @return void
+     */
     public function testSelectStringNoResult()
     {
         $c = new ModelCriteria('bookstore', 'Propel\Tests\Bookstore\Book');
@@ -61,9 +69,12 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
         $c->where('Propel\Tests\Bookstore\Book.title = ?', 'kdjfhlkdsh');
         $c->select('Title');
         $title = $c->findOne();
-        $this->assertTrue(is_null($title), 'findOne() called after select(string) returns null when no record is found');
+        $this->assertTrue($title === null, 'findOne() called after select(string) returns null when no record is found');
     }
 
+    /**
+     * @return void
+     */
     public function testSelectStringAcceptsColumnNames()
     {
         $c = new ModelCriteria('bookstore', 'Propel\Tests\Bookstore\Book');
@@ -85,6 +96,9 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
         $this->assertEquals($expectedSQL, $this->con->getLastExecutedQuery(), 'select() accepts complete column names with table aliases');
     }
 
+    /**
+     * @return void
+     */
     public function testSelectStringFind()
     {
         BookstoreDataPopulator::depopulate($this->con);
@@ -106,6 +120,9 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
         $this->assertEquals($expectedSQL, $this->con->getLastExecutedQuery(), 'find() called after select(string) allows for where() statements');
     }
 
+    /**
+     * @return void
+     */
     public function testSelectStringFindOne()
     {
         BookstoreDataPopulator::depopulate($this->con);
@@ -116,21 +133,21 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
         $title = $c->findOne($this->con);
         $expectedSQL = $this->getSql('SELECT book.title AS "Title" FROM book LIMIT 1');
         $this->assertEquals($expectedSQL, $this->con->getLastExecutedQuery(), 'findOne() called after select(string) selects a single column and requests a single row');
-        $this->assertTrue(is_string($title),'findOne() called after select(string) returns a string');
+        $this->assertTrue(is_string($title), 'findOne() called after select(string) returns a string');
         $this->assertEquals($title, 'Harry Potter and the Order of the Phoenix', 'findOne() called after select(string) returns the column value of the first row matching the query');
 
         $c = new ModelCriteria('bookstore', 'Propel\Tests\Bookstore\Author');
         $c->where('Propel\Tests\Bookstore\Author.FirstName = ?', 'Neal');
         $c->select('FirstName');
         $author = $c->findOne($this->con);
-        $this->assertEquals(count($author), 1, 'findOne() called after select(string) allows for where() statements');
+        $this->assertNotInstanceOf(Collection::class, $author, 'findOne() called after select(string) allows for where() statements');
         $expectedSQL = $this->getSql("SELECT author.first_name AS \"FirstName\" FROM author WHERE author.first_name = 'Neal' LIMIT 1");
         $this->assertEquals($expectedSQL, $this->con->getLastExecutedQuery(), 'findOne() called after select(string) allows for where() statements');
 
         $c = new ModelCriteria('bookstore', 'Propel\Tests\Bookstore\Author');
         $c->select(AuthorTableMap::COL_FIRST_NAME);
         $author = $c->find($this->con);
-        $expectedSQL = $this->getSql("SELECT author.first_name AS \"author.first_name\" FROM author");
+        $expectedSQL = $this->getSql('SELECT author.first_name AS "author.first_name" FROM author');
         $this->assertEquals($expectedSQL, $this->con->getLastExecutedQuery(), 'select(string) accepts model TableMap Constants');
     }
 
@@ -138,10 +155,12 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
      * As $failSilently is true by default, it doesn't throw any exception, just returns null.
      * So, we check the query fails here.
      *
-     * @expectedException \Propel\Runtime\Exception\PropelException
+     * @return void
      */
     public function testSelectStringFindCalledWithNonExistingColumn()
     {
+        $this->expectException(PropelException::class);
+
         BookstoreDataPopulator::depopulate($this->con);
         BookstoreDataPopulator::populate($this->con);
 
@@ -150,6 +169,9 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
         $author = $c->find($this->con);
     }
 
+    /**
+     * @return void
+     */
     public function testSelectStringJoin()
     {
         BookstoreDataPopulator::depopulate($this->con);
@@ -176,7 +198,7 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
         $c->where('Author.FirstName = ?', 'Neal');
         $c->select('Title');
         $title = $c->findOne($this->con);
-        $this->assertEquals(count($title), 1, 'findOne() called after select(string) allows for join() statements');
+        $this->assertNotInstanceOf(Collection::class, $title, 'findOne() called after select(string) allows for join() statements');
         $expectedSQL = $this->getSql("SELECT book.title AS \"Title\" FROM book INNER JOIN author ON (book.author_id=author.id) WHERE author.first_name = 'Neal' LIMIT 1");
         $this->assertEquals($expectedSQL, $this->con->getLastExecutedQuery(), 'findOne() called after select(string) allows for where() statements');
 
@@ -188,6 +210,9 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
         $this->assertEquals($title, 'Neal', 'findOne() called after select(string) will return values from the joined table using complete column names');
     }
 
+    /**
+     * @return void
+     */
     public function testSelectStringWildcard()
     {
         BookstoreDataPopulator::depopulate($this->con);
@@ -202,6 +227,9 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
         $this->assertEquals(['Propel\Tests\Bookstore\Book.Id', 'Propel\Tests\Bookstore\Book.Title', 'Propel\Tests\Bookstore\Book.ISBN', 'Propel\Tests\Bookstore\Book.Price', 'Propel\Tests\Bookstore\Book.PublisherId', 'Propel\Tests\Bookstore\Book.AuthorId'], array_keys($book), 'select(\'*\') returns all the columns from the main object, in complete form');
     }
 
+    /**
+     * @return void
+     */
     public function testSelectArrayFind()
     {
         BookstoreDataPopulator::depopulate($this->con);
@@ -222,6 +250,9 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
         $this->assertEquals($expectedSQL, $this->con->getLastExecutedQuery(), 'find() called after select(array) allows for where() statements');
     }
 
+    /**
+     * @return void
+     */
     public function testSelectArrayFindOne()
     {
         BookstoreDataPopulator::depopulate($this->con);
@@ -236,6 +267,9 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
         $this->assertEquals($expectedSQL, $this->con->getLastExecutedQuery(), 'findOne() called after select(array) allows for where() statements');
     }
 
+    /**
+     * @return void
+     */
     public function testSelectArrayJoin()
     {
         BookstoreDataPopulator::depopulate($this->con);
@@ -274,6 +308,9 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
         $this->assertEquals(array_values($title), ['Neal', 'Stephenson'], 'findOne() called after select(array) will return values from the joined table using complete column names');
     }
 
+    /**
+     * @return void
+     */
     public function testSelectArrayRelation()
     {
         BookstoreDataPopulator::depopulate($this->con);
@@ -332,11 +369,14 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
             [
                 'Author.LastName' => 'Grass',
                 'Book.title' => 'The Tin Drum',
-            ]
+            ],
         ];
         $this->assertEquals(serialize($rows->getData()), serialize($expectedRows), 'find() called after select(array) returns columns from several tables (many-to-one');
     }
 
+    /**
+     * @return void
+     */
     public function testSelectArrayWithColumn()
     {
         BookstoreDataPopulator::depopulate($this->con);
@@ -372,6 +412,9 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
         $this->assertEquals(serialize($rows->getData()), serialize($expectedRows), 'find() called after select(array) can cope with a column added with withColumn()');
     }
 
+    /**
+     * @return void
+     */
     public function testSelectAllWithColumn()
     {
         BookstoreDataPopulator::depopulate($this->con);
@@ -386,9 +429,11 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
 
         $expectedSQL = $this->getSql('SELECT book.id, book.title, book.isbn, book.price, book.publisher_id, book.author_id, author.last_name AS authorLastName FROM book INNER JOIN author ON (book.author_id=author.id)');
         $this->assertEquals($expectedSQL, $this->con->getLastExecutedQuery(), 'Rest of table after column added with withColumn() is not properly loaded');
-
     }
 
+    /**
+     * @return void
+     */
     public function testSelectArrayPaginate()
     {
         BookstoreDataPopulator::depopulate($this->con);
@@ -404,47 +449,63 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
         }
     }
 
-    public function testGetSelectReturnsNullByDefault()
-    {
-        $c = new ModelCriteria('bookstore', 'Propel\Tests\Bookstore\Book');
-        $this->assertNull($c->getSelect());
-    }
-
-    public function testGetSelectReturnsStringWhenSelectingASingleColumn()
+    /**
+     * @return void
+     */
+    public function testGetSelectAddsToAsColumns()
     {
         $c = new ModelCriteria('bookstore', 'Propel\Tests\Bookstore\Book');
         $c->select('Title');
-        $this->assertEquals('Title', $c->getSelect());
+
+        $this->assertIsArray($c->getAsColumns());
+        $this->assertCount(1, $c->getAsColumns());
+        $this->assertArrayHasKey('"Title"', $c->getAsColumns());
+        $clause = $c->getAsColumns()['"Title"'];
+        $this->assertEquals('book.title', $clause);
     }
 
-    public function testGetSelectReturnsArrayWhenSelectingSeveralColumns()
+    /**
+     * @return void
+     */
+    public function testGetSelectAddsArrayToAsColumns()
     {
         $c = new ModelCriteria('bookstore', 'Propel\Tests\Bookstore\Book');
-        $c->select(['Id', 'Title']);
-        $this->assertEquals(['Id', 'Title'], $c->getSelect());
+        $columns = ['Id', 'Title'];
+        $c->select($columns);
+
+        $this->assertIsArray($c->getAsColumns());
+        $this->assertCount(2, $c->getAsColumns());
+        foreach ($columns as $columnName) {
+            $quotedName = "\"$columnName\"";
+            $this->assertArrayHasKey($quotedName, $c->getAsColumns());
+            $clause = $c->getAsColumns()[$quotedName];
+            $this->assertEquals('book.' . strtolower($columnName), $clause);
+        }
     }
 
-    public function testGetSelectReturnsArrayWhenSelectingASingleColumnAsArray()
-    {
-        $c = new ModelCriteria('bookstore', 'Propel\Tests\Bookstore\Book');
-        $c->select(['Title']);
-        $this->assertEquals(['Title'], $c->getSelect());
-    }
-
+    /**
+     * @return void
+     */
     public function testGetSelectReturnsArrayWhenSelectingAllColumns()
     {
         $c = new ModelCriteria('bookstore', 'Propel\Tests\Bookstore\Book');
         $c->select('*');
-        $this->assertEquals([
-            'Propel\Tests\Bookstore\Book.Id',
-            'Propel\Tests\Bookstore\Book.Title',
-            'Propel\Tests\Bookstore\Book.ISBN',
-            'Propel\Tests\Bookstore\Book.Price',
-            'Propel\Tests\Bookstore\Book.PublisherId',
-            'Propel\Tests\Bookstore\Book.AuthorId'
-        ], $c->getSelect());
+        $tableColumns = BookTableMap::getTableMap()->getColumns();
+
+        $this->assertIsArray($c->getAsColumns());
+        $this->assertCount(count($tableColumns), $c->getAsColumns());
+        foreach ($tableColumns as $columnMap) {
+            $columnName = $c->getModelName() . '.' . $columnMap->getPhpName();
+            $quotedName = "\"$columnName\"";
+            $this->assertArrayHasKey($quotedName, $c->getAsColumns());
+            $clause = $c->getAsColumns()[$quotedName];
+            $this->assertEquals($columnMap->getFullyQualifiedName(), $clause);
+        }
     }
 
+    /**
+     * @return void
+     */
     public function testFormatterWithSelect()
     {
         $c = new ModelCriteria('bookstore', 'Propel\Tests\Bookstore\Book');
@@ -453,6 +514,16 @@ class ModelCriteriaSelectTest extends BookstoreTestBase
         $c->select(['Id', 'Title']);
         $rows = $c->find($this->con);
 
-        $this->assertTrue($c->getFormatter() instanceof \Propel\Runtime\Formatter\OnDemandFormatter, 'The formatter is preserved');
+        $this->assertTrue($c->getFormatter() instanceof OnDemandFormatter, 'The formatter is preserved');
+    }
+    
+    /**
+     * @return void
+     */
+    public function testSelectNonexistentColumnThrowsException()
+    {
+        $this->expectException(PropelException::class);
+        $c = new ModelCriteria('bookstore', 'Propel\Tests\Bookstore\Book');
+        $c->select(['Id', 'LeUnknonwColumn']);
     }
 }

@@ -1,19 +1,20 @@
 <?php
 
 /**
- * This file is part of the Propel package.
+ * MIT License. This file is part of the Propel package.
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
- *
- * @license MIT License
  */
 
 namespace Propel\Tests\Generator\Builder\Om;
 
-use Propel\Runtime\Propel;
+use Propel\Generator\Builder\Om\TableMapBuilder;
+use Propel\Generator\Builder\Util\SchemaReader;
+use Propel\Generator\Config\QuickGeneratorConfig;
 use Propel\Runtime\Map\RelationMap;
-use Propel\Tests\Helpers\Bookstore\BookstoreTestBase;
+use Propel\Runtime\Propel;
 use Propel\Tests\Bookstore\Behavior\Map\Table1TableMap;
+use Propel\Tests\Helpers\Bookstore\BookstoreTestBase;
 
 /**
  * Test class for TableMapBuilder.
@@ -26,12 +27,18 @@ class TableMapBuilderTest extends BookstoreTestBase
 {
     protected $databaseMap;
 
-    protected function setUp()
+    /**
+     * @return void
+     */
+    protected function setUp(): void
     {
         parent::setUp();
         $this->databaseMap = Propel::getServiceContainer()->getDatabaseMap('bookstore');
     }
 
+    /**
+     * @return void
+     */
     public function testColumnDefaultValue()
     {
         $table = $this->databaseMap->getTableByPhpName('\Propel\Tests\Bookstore\BookstoreEmployeeAccount');
@@ -60,6 +67,9 @@ class TableMapBuilderTest extends BookstoreTestBase
         );
     }
 
+    /**
+     * @return void
+     */
     public function testRelationCount()
     {
         $bookTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\Book');
@@ -70,6 +80,9 @@ class TableMapBuilderTest extends BookstoreTestBase
         );
     }
 
+    /**
+     * @return void
+     */
     public function testSimpleRelationName()
     {
         $bookTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\Book');
@@ -83,6 +96,9 @@ class TableMapBuilderTest extends BookstoreTestBase
         );
     }
 
+    /**
+     * @return void
+     */
     public function testAliasRelationName()
     {
         $bookEmpTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\BookstoreEmployee');
@@ -96,6 +112,9 @@ class TableMapBuilderTest extends BookstoreTestBase
         );
     }
 
+    /**
+     * @return void
+     */
     public function testDuplicateRelationName()
     {
         $essayTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\Essay');
@@ -109,6 +128,9 @@ class TableMapBuilderTest extends BookstoreTestBase
         );
     }
 
+    /**
+     * @return void
+     */
     public function testRelationDirectionManyToOne()
     {
         $bookTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\Book');
@@ -124,6 +146,9 @@ class TableMapBuilderTest extends BookstoreTestBase
         );
     }
 
+    /**
+     * @return void
+     */
     public function testRelationDirectionOneToMany()
     {
         $bookTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\Book');
@@ -159,6 +184,9 @@ class TableMapBuilderTest extends BookstoreTestBase
         );
     }
 
+    /**
+     * @return void
+     */
     public function testRelationDirectionOneToOne()
     {
         $bookEmpTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\BookstoreEmployee');
@@ -169,6 +197,9 @@ class TableMapBuilderTest extends BookstoreTestBase
         );
     }
 
+    /**
+     * @return void
+     */
     public function testRelationDirectionManyToMAny()
     {
         $bookTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\Book');
@@ -179,6 +210,9 @@ class TableMapBuilderTest extends BookstoreTestBase
         );
     }
 
+    /**
+     * @return void
+     */
     public function testRelationsColumns()
     {
         $bookTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\Book');
@@ -204,7 +238,7 @@ class TableMapBuilderTest extends BookstoreTestBase
         $rfTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\ReaderFavorite');
         $expectedMapping = [
             'reader_favorite.book_id' => 'book_opinion.book_id',
-            'reader_favorite.reader_id' => 'book_opinion.reader_id'
+            'reader_favorite.reader_id' => 'book_opinion.reader_id',
         ];
         $this->assertEquals(
             $expectedMapping,
@@ -219,6 +253,9 @@ class TableMapBuilderTest extends BookstoreTestBase
         );
     }
 
+    /**
+     * @return void
+     */
     public function testRelationOnDelete()
     {
         $bookTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\Book');
@@ -229,6 +266,9 @@ class TableMapBuilderTest extends BookstoreTestBase
         );
     }
 
+    /**
+     * @return void
+     */
     public function testRelationOnUpdate()
     {
         $bookTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\Book');
@@ -243,6 +283,9 @@ class TableMapBuilderTest extends BookstoreTestBase
         );
     }
 
+    /**
+     * @return void
+     */
     public function testBehaviors()
     {
         $bookTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\Book');
@@ -265,8 +308,8 @@ class TableMapBuilderTest extends BookstoreTestBase
                 'create_column' => 'created_on',
                 'update_column' => 'updated_on',
                 'disable_created_at' => 'false',
-                'disable_updated_at' => 'false'
-            ]
+                'disable_updated_at' => 'false',
+            ],
         ];
         $this->assertEquals(
             $tmap->getBehaviors(),
@@ -275,6 +318,9 @@ class TableMapBuilderTest extends BookstoreTestBase
         );
     }
 
+    /**
+     * @return void
+     */
     public function testSingleTableInheritance()
     {
         $bookTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\Book');
@@ -290,6 +336,9 @@ class TableMapBuilderTest extends BookstoreTestBase
         );
     }
 
+    /**
+     * @return void
+     */
     public function testPrimaryString()
     {
         $bookTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\Book');
@@ -301,11 +350,53 @@ class TableMapBuilderTest extends BookstoreTestBase
         );
     }
 
+    /**
+     * @return void
+     */
     public function testIsCrossRef()
     {
         $bookTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\Book');
         $this->assertFalse($bookTable->isCrossRef(), 'The map builder add isCrossRef information "false"');
         $BookListRelTable = $this->databaseMap->getTableByPhpName('Propel\Tests\Bookstore\BookListRel');
         $this->assertTrue($BookListRelTable->isCrossRef(), 'The map builder add isCrossRef information "true"');
+    }
+
+    /**
+     * @return void
+     */
+    public function testNormalizedColumnMapHasOnlyUniqueKeys()
+    {
+        $databaseXml = '
+<database>
+    <table name="email">
+        <column name="id" type="integer"/>
+        <column name="email_address" type="varchar"/>
+    </table>
+</database>
+';
+        $reader = new SchemaReader();
+        $schema = $reader->parseString($databaseXml);
+        $table = $schema->getDatabase()->getTable('email');
+
+        $tableMapBuilder = new class($table) extends TableMapBuilder {
+            public function getNormalizedColumnNameMapDefinition(): string
+            {
+                $script = '';
+                $this->addNormalizedColumnNameMap($script);
+                return $script;
+            }
+        };
+        $tableMapBuilder->setGeneratorConfig(new QuickGeneratorConfig());
+        $normalizedColumnMapDefinition = $tableMapBuilder->getNormalizedColumnNameMapDefinition();
+
+        // extract inner part of the array
+        $this->assertEquals(1, preg_match('/= \[\n(.*)\n\s*\]/ms', $normalizedColumnMapDefinition, $matches));
+
+        // split, then check for number of lines -- so that we are sure nothing vanishes
+        $list = explode(PHP_EOL, $matches[1]);
+        $this->assertCount(14, $list);
+
+        // check for uniqueness -> unique list has to be the same size
+        $this->assertCount(14, array_unique($list));
     }
 }

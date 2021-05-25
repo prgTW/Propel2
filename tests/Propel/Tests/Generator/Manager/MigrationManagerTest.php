@@ -1,5 +1,11 @@
 <?php
 
+/**
+ * MIT License. This file is part of the Propel package.
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
 namespace Propel\Tests\Generator\Manager;
 
 use Propel\Generator\Config\GeneratorConfig;
@@ -12,7 +18,7 @@ use Propel\Tests\TestCase;
 class MigrationManagerTest extends TestCase
 {
     /**
-     * @return MigrationManager
+     * @return \Propel\Generator\Manager\MigrationManager
      */
     private function createMigrationManager(array $migrationTimestamps)
     {
@@ -20,7 +26,9 @@ class MigrationManagerTest extends TestCase
 
         $connections = $generatorConfig->getBuildConnections();
 
-        $migrationManager = $this->getMock('Propel\Generator\Manager\MigrationManager', ['getMigrationTimestamps']);
+        $migrationManager = $this->getMockBuilder(MigrationManager::class)
+            ->setMethods(['getMigrationTimestamps'])
+            ->getMock();
         $migrationManager->setGeneratorConfig($generatorConfig);
         $migrationManager->setConnections($connections);
         $migrationManager->setMigrationTable('migration');
@@ -35,6 +43,9 @@ class MigrationManagerTest extends TestCase
         return $migrationManager;
     }
 
+    /**
+     * @return void
+     */
     public function testMigrationTableWillBeCreated()
     {
         $migrationManager = $this->createMigrationManager([]);
@@ -44,6 +55,9 @@ class MigrationManagerTest extends TestCase
         $this->assertTrue($migrationManager->migrationTableExists('migration'));
     }
 
+    /**
+     * @return void
+     */
     public function testGetAllDatabaseVersions()
     {
         $databaseVersions = [1, 2, 3];
@@ -57,6 +71,9 @@ class MigrationManagerTest extends TestCase
         $this->assertEquals($databaseVersions, $migrationManager->getAllDatabaseVersions());
     }
 
+    /**
+     * @return void
+     */
     public function testGetValidMigrationTimestamps()
     {
         $localTimestamps = [1, 2, 3, 4];
@@ -73,6 +90,9 @@ class MigrationManagerTest extends TestCase
         $this->assertEquals($expectedMigrationTimestamps, $migrationManager->getValidMigrationTimestamps());
     }
 
+    /**
+     * @return void
+     */
     public function testRemoveMigrationTimestamp()
     {
         $localTimestamps = [1, 2];
@@ -90,6 +110,9 @@ class MigrationManagerTest extends TestCase
         $this->assertEquals([2], $migrationManager->getValidMigrationTimestamps());
     }
 
+    /**
+     * @return void
+     */
     public function testGetAlreadyExecutedTimestamps()
     {
         $timestamps = [1, 2];
@@ -106,6 +129,9 @@ class MigrationManagerTest extends TestCase
         $this->assertEquals($timestamps, $migrationManager->getAlreadyExecutedMigrationTimestamps());
     }
 
+    /**
+     * @return void
+     */
     public function testIsPending()
     {
         $localTimestamps = [1, 2];
@@ -120,6 +146,9 @@ class MigrationManagerTest extends TestCase
         $this->assertFalse($migrationManager->hasPendingMigrations());
     }
 
+    /**
+     * @return void
+     */
     public function testGetOldestDatabaseVersion()
     {
         $timestamps = [1, 2];
@@ -133,6 +162,9 @@ class MigrationManagerTest extends TestCase
         $this->assertEquals(2, $migrationManager->getOldestDatabaseVersion());
     }
 
+    /**
+     * @return void
+     */
     public function testGetFirstUpMigrationTimestamp()
     {
         $migrationManager = $this->createMigrationManager([1, 2, 3]);
@@ -143,6 +175,9 @@ class MigrationManagerTest extends TestCase
         $this->assertEquals(2, $migrationManager->getFirstUpMigrationTimestamp());
     }
 
+    /**
+     * @return void
+     */
     public function testGetFirstDownMigrationTimestamp()
     {
         $migrationManager = $this->createMigrationManager([1, 2, 3]);
@@ -154,12 +189,43 @@ class MigrationManagerTest extends TestCase
         $this->assertEquals(2, $migrationManager->getFirstDownMigrationTimestamp());
     }
 
+    /**
+     * @return void
+     */
     public function testGetCommentMigrationManager()
     {
         $migrationManager = $this->createMigrationManager([1, 2, 3]);
 
-        $body = $migrationManager->getMigrationClassBody("foo", "bar", 4, "migration comment");
+        $body = $migrationManager->getMigrationClassBody(['foo' => ''], ['foo' => ''], 4, 'migration comment');
 
-        $this->assertContains('public $comment = \'migration comment\';', $body);
+        $this->assertStringContainsString('public $comment = \'migration comment\';', $body);
+    }
+
+    /**
+     * @return void
+     */
+    public function testBuildVariableNamesFromConnectionNames()
+    {
+        $manager = new class() extends MigrationManager{
+            public function build(array $migrationsUp, array $migrationsDown): array
+            {
+                return static::buildConnectionToVariableNameMap($migrationsUp, $migrationsDown);
+            }
+        };
+        
+        $migrationsUp = array_fill_keys(['default', 'with space', '\/', '123'], '');
+        $migrationsDown = array_fill_keys(['default', 'connection$', 'connection&', 'connection%'], '');
+        
+        $expectedResult = [
+            'default' => '$connection_default',
+            'with space' => '$connection_withspace',
+            '\/' => '$connection_2',
+            '123' => '$connection_123',
+            'connection$' => '$connection_connection',
+            'connection&' => '$connection_connectionI',
+            'connection%' => '$connection_connectionII',
+        ];
+        $result = $manager->build($migrationsUp, $migrationsDown);
+        $this->assertEquals($expectedResult, $result);
     }
 }

@@ -1,23 +1,24 @@
 <?php
 
 /**
- * This file is part of the Propel package.
+ * MIT License. This file is part of the Propel package.
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
- *
- * @license MIT License
  */
 
 namespace Propel\Generator\Reverse;
 
+use PDO;
 use Propel\Generator\Model\Column;
+use Propel\Generator\Model\ColumnDefaultValue;
 use Propel\Generator\Model\Database;
 use Propel\Generator\Model\ForeignKey;
 use Propel\Generator\Model\Index;
+use Propel\Generator\Model\PropelTypes;
 use Propel\Generator\Model\Table;
 use Propel\Generator\Model\Unique;
-use Propel\Generator\Model\PropelTypes;
-use Propel\Generator\Model\ColumnDefaultValue;
+use Propel\Generator\Platform\MysqlPlatform;
+use Propel\Runtime\Connection\ConnectionInterface;
 
 /**
  * Mysql database schema parser.
@@ -27,59 +28,63 @@ use Propel\Generator\Model\ColumnDefaultValue;
 class MysqlSchemaParser extends AbstractSchemaParser
 {
     /**
-     * @var boolean
+     * @var bool
      */
     private $addVendorInfo = false;
 
     /**
      * Map MySQL native types to Propel types.
-     * @var array
+     *
+     * @var string[]
      */
     private static $mysqlTypeMap = [
-        'tinyint'    => PropelTypes::TINYINT,
-        'smallint'   => PropelTypes::SMALLINT,
-        'mediumint'  => PropelTypes::SMALLINT,
-        'int'        => PropelTypes::INTEGER,
-        'integer'    => PropelTypes::INTEGER,
-        'bigint'     => PropelTypes::BIGINT,
-        'int24'      => PropelTypes::BIGINT,
-        'real'       => PropelTypes::DOUBLE,
-        'float'      => PropelTypes::FLOAT,
-        'decimal'    => PropelTypes::DECIMAL,
-        'numeric'    => PropelTypes::NUMERIC,
-        'double'     => PropelTypes::DOUBLE,
-        'char'       => PropelTypes::CHAR,
-        'varchar'    => PropelTypes::VARCHAR,
-        'date'       => PropelTypes::DATE,
-        'time'       => PropelTypes::TIME,
-        'year'       => PropelTypes::INTEGER,
-        'datetime'   => PropelTypes::TIMESTAMP,
-        'timestamp'  => PropelTypes::TIMESTAMP,
-        'tinyblob'   => PropelTypes::BINARY,
-        'blob'       => PropelTypes::BLOB,
+        'tinyint' => PropelTypes::TINYINT,
+        'smallint' => PropelTypes::SMALLINT,
+        'mediumint' => PropelTypes::SMALLINT,
+        'int' => PropelTypes::INTEGER,
+        'integer' => PropelTypes::INTEGER,
+        'bigint' => PropelTypes::BIGINT,
+        'int24' => PropelTypes::BIGINT,
+        'real' => PropelTypes::DOUBLE,
+        'float' => PropelTypes::FLOAT,
+        'decimal' => PropelTypes::DECIMAL,
+        'numeric' => PropelTypes::NUMERIC,
+        'double' => PropelTypes::DOUBLE,
+        'char' => PropelTypes::CHAR,
+        'varchar' => PropelTypes::VARCHAR,
+        'date' => PropelTypes::DATE,
+        'time' => PropelTypes::TIME,
+        'year' => PropelTypes::INTEGER,
+        'datetime' => PropelTypes::TIMESTAMP,
+        'timestamp' => PropelTypes::TIMESTAMP,
+        'tinyblob' => PropelTypes::BINARY,
+        'blob' => PropelTypes::BLOB,
         'mediumblob' => PropelTypes::VARBINARY,
-        'longblob'   => PropelTypes::LONGVARBINARY,
-        'longtext'   => PropelTypes::CLOB,
-        'tinytext'   => PropelTypes::VARCHAR,
+        'longblob' => PropelTypes::LONGVARBINARY,
+        'longtext' => PropelTypes::CLOB,
+        'tinytext' => PropelTypes::VARCHAR,
         'mediumtext' => PropelTypes::LONGVARCHAR,
-        'text'       => PropelTypes::LONGVARCHAR,
-        'enum'       => PropelTypes::CHAR,
-        'set'        => PropelTypes::CHAR,
+        'text' => PropelTypes::LONGVARCHAR,
+        'enum' => PropelTypes::CHAR,
+        'set' => PropelTypes::CHAR,
     ];
 
+    /**
+     * @var int[]
+     */
     protected static $defaultTypeSizes = [
-        'char'     => 1,
-        'tinyint'  => 4,
+        'char' => 1,
+        'tinyint' => 4,
         'smallint' => 6,
-        'int'      => 11,
-        'bigint'   => 20,
-        'decimal'  => 10,
+        'int' => 11,
+        'bigint' => 20,
+        'decimal' => 10,
     ];
 
     /**
      * Gets a type mapping from native types to Propel types
      *
-     * @return array
+     * @return string[]
      */
     protected function getTypeMapping()
     {
@@ -87,13 +92,24 @@ class MysqlSchemaParser extends AbstractSchemaParser
     }
 
     /**
-     * @param  Database $database
-     * @param  Table[]  $additionalTables
+     * @param \Propel\Runtime\Connection\ConnectionInterface|null $dbh Optional database connection
+     */
+    public function __construct(?ConnectionInterface $dbh = null)
+    {
+        parent::__construct($dbh);
+
+        $this->setPlatform(new MysqlPlatform());
+    }
+
+    /**
+     * @param \Propel\Generator\Model\Database $database
+     * @param \Propel\Generator\Model\Table[] $additionalTables
+     *
      * @return int
      */
     public function parse(Database $database, array $additionalTables = [])
     {
-        if (null !== $this->getGeneratorConfig()) {
+        if ($this->getGeneratorConfig() !== null) {
             $this->addVendorInfo = $this->getGeneratorConfig()->get()['migrations']['addVendorInfo'];
         }
 
@@ -114,11 +130,19 @@ class MysqlSchemaParser extends AbstractSchemaParser
             $this->addPrimaryKey($table);
 
             $this->addTableVendorInfo($table);
+            $this->addDescriptionToTable($table);
+            $this->addColumnDescriptionsToTable($table);
         }
 
         return count($database->getTables());
     }
 
+    /**
+     * @param \Propel\Generator\Model\Database $database
+     * @param \Propel\Generator\Model\Table|null $filterTable
+     *
+     * @return void
+     */
     protected function parseTables(Database $database, $filterTable = null)
     {
         $sql = 'SHOW FULL TABLES';
@@ -128,14 +152,13 @@ class MysqlSchemaParser extends AbstractSchemaParser
                 $sql .= ' FROM ' . $database->getPlatform()->doQuoting($schema);
             }
             $sql .= sprintf(" LIKE '%s'", $filterTable->getCommonName());
-        } else if ($schema = $database->getSchema()) {
+        } elseif ($schema = $database->getSchema()) {
             $sql .= ' FROM ' . $database->getPlatform()->doQuoting($schema);
         }
 
         $dataFetcher = $this->dbh->query($sql);
 
         // First load the tables (important that this happen before filling out details of tables)
-        $tables = [];
         foreach ($dataFetcher as $row) {
             $name = $row[0];
             $type = $row[1];
@@ -150,20 +173,22 @@ class MysqlSchemaParser extends AbstractSchemaParser
                 $table->setSchema($filterTable->getSchema());
             }
             $database->addTable($table);
-            $tables[] = $table;
         }
     }
 
     /**
      * Adds Columns to the specified table.
      *
-     * @param Table $table The Table model class to add columns to.
+     * @param \Propel\Generator\Model\Table $table The Table model class to add columns to.
+     *
+     * @return void
      */
     protected function addColumns(Table $table)
     {
+        /** @var \PDOStatement $stmt */
         $stmt = $this->dbh->query(sprintf('SHOW COLUMNS FROM %s', $this->getPlatform()->doQuoting($table->getName())));
 
-        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $column = $this->getColumnFromRow($row, $table);
             $table->addColumn($column);
         }
@@ -173,15 +198,17 @@ class MysqlSchemaParser extends AbstractSchemaParser
      * Factory method creating a Column object
      * based on a row from the 'show columns from ' MySQL query result.
      *
-     * @param  array  $row An associative array with the following keys:
+     * @param array $row An associative array with the following keys:
      *                     Field, Type, Null, Key, Default, Extra.
-     * @return Column
+     * @param \Propel\Generator\Model\Table $table
+     *
+     * @return \Propel\Generator\Model\Column
      */
     public function getColumnFromRow($row, Table $table)
     {
         $name = $row['Field'];
-        $isNullable = ('YES' === $row['Null']);
-        $autoincrement = (false !== strpos($row['Extra'], 'auto_increment'));
+        $isNullable = ($row['Null'] === 'YES');
+        $autoincrement = (strpos($row['Extra'], 'auto_increment') !== false);
         $size = null;
         $scale = null;
         $sqlType = false;
@@ -197,17 +224,17 @@ class MysqlSchemaParser extends AbstractSchemaParser
         if (preg_match($regexp, $row['Type'], $matches)) {
             $nativeType = $matches[1];
             if ($matches[2]) {
-                if (false !== ($cpos = strpos($matches[2], ','))) {
-                    $size = (int) substr($matches[2], 0, $cpos);
-                    $scale = (int) substr($matches[2], $cpos + 1);
+                if (($cpos = strpos($matches[2], ',')) !== false) {
+                    $size = (int)substr($matches[2], 0, $cpos);
+                    $scale = (int)substr($matches[2], $cpos + 1);
                 } else {
-                    $size = (int) $matches[2];
+                    $size = (int)$matches[2];
                 }
             }
             if ($matches[3]) {
                 $sqlType = $row['Type'];
             }
-            if (isset(static::$defaultTypeSizes[$nativeType]) && null == $scale && $size === static::$defaultTypeSizes[$nativeType]) {
+            if (isset(static::$defaultTypeSizes[$nativeType]) && $scale == null && $size === static::$defaultTypeSizes[$nativeType]) {
                 $size = null;
             }
         } elseif (preg_match('/^(\w+)\(/', $row['Type'], $matches)) {
@@ -226,11 +253,11 @@ class MysqlSchemaParser extends AbstractSchemaParser
         if (!$propelType) {
             $propelType = Column::DEFAULT_TYPE;
             $sqlType = $row['Type'];
-            $this->warn("Column [" . $table->getName() . "." . $name. "] has a column type (".$nativeType.") that Propel does not support.");
+            $this->warn('Column [' . $table->getName() . '.' . $name . '] has a column type (' . $nativeType . ') that Propel does not support.');
         }
 
         // Special case for TINYINT(1) which is a BOOLEAN
-        if (PropelTypes::TINYINT === $propelType && 1 === $size) {
+        if ($propelType === PropelTypes::TINYINT && $size === 1) {
             $propelType = PropelTypes::BOOLEAN;
         }
 
@@ -251,7 +278,8 @@ class MysqlSchemaParser extends AbstractSchemaParser
                     $default = 'false';
                 }
             }
-            if (in_array($default, ['CURRENT_TIMESTAMP'])) {
+            if (in_array($default, ['CURRENT_TIMESTAMP', 'current_timestamp()'])) {
+                $default = 'CURRENT_TIMESTAMP';
                 $type = ColumnDefaultValue::TYPE_EXPR;
             } else {
                 $type = ColumnDefaultValue::TYPE_VALUE;
@@ -270,7 +298,87 @@ class MysqlSchemaParser extends AbstractSchemaParser
     }
 
     /**
+     * Load and set table description.
+     *
+     * @param \Propel\Generator\Model\Table $table
+     *
+     * @return void
+     */
+    protected function addDescriptionToTable(Table $table): void
+    {
+        $tableDescription = $this->loadTableDescription($table);
+        if ($tableDescription) {
+            $table->setDescription($tableDescription);
+        }
+    }
+
+    /**
+     * Sets column descriptions according to source.
+     *
+     * @param \Propel\Generator\Model\Table $table
+     *
+     * @return void
+     */
+    protected function addColumnDescriptionsToTable(Table $table): void
+    {
+        foreach ($table->getColumns() as $column) {
+            $columnDescription = $this->loadColumnDescription($column);
+            if ($columnDescription) {
+                $column->setDescription($columnDescription);
+            }
+        }
+    }
+
+    /**
+     * Load a comment for this table.
+     *
+     * @param \Propel\Generator\Model\Table $table
+     *
+     * @return string|null
+     */
+    protected function loadTableDescription(Table $table): ?string
+    {
+        $tableName = $this->getPlatform()->quote($table->getName());
+        $query = <<< EOT
+SELECT table_comment
+FROM INFORMATION_SCHEMA.TABLES
+WHERE table_schema=DATABASE()
+  AND table_name=($tableName)
+EOT;
+
+        /** @var string|null */
+        return $this->dbh->query($query)->fetchColumn();
+    }
+
+    /**
+     * Load a comment for this column.
+     *
+     * @param \Propel\Generator\Model\Column $column
+     *
+     * @return string|null
+     */
+    protected function loadColumnDescription(Column $column): ?string
+    {
+        $tableName = $this->getPlatform()->quote($column->getTableName());
+        $columnName = $this->getPlatform()->quote($column->getName());
+        $query = <<< EOT
+SELECT column_comment
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE table_schema=DATABASE()
+  AND table_name=($tableName)
+  AND column_name=($columnName)
+EOT;
+
+        /** @var string|null */
+        return $this->dbh->query($query)->fetchColumn();
+    }
+
+    /**
      * Load foreign keys for this table.
+     *
+     * @param \Propel\Generator\Model\Table $table
+     *
+     * @return void
      */
     protected function addForeignKeys(Table $table)
     {
@@ -286,11 +394,11 @@ class MysqlSchemaParser extends AbstractSchemaParser
         if (preg_match_all($pattern, $row[1], $matches)) {
             $tmpArray = array_keys($matches[0]);
             foreach ($tmpArray as $curKey) {
-                $name    = $matches[1][$curKey];
+                $name = $matches[1][$curKey];
                 $rawlcol = $matches[2][$curKey];
-                $ftbl    = str_replace('`', '', $matches[3][$curKey]);
+                $ftbl = str_replace('`', '', $matches[3][$curKey]);
                 $rawfcol = $matches[4][$curKey];
-                $fkey    = $matches[5][$curKey];
+                $fkey = $matches[5][$curKey];
 
                 $lcols = [];
                 foreach (preg_split('/`, `/', $rawlcol) as $piece) {
@@ -321,14 +429,14 @@ class MysqlSchemaParser extends AbstractSchemaParser
 
                 // restrict is the default
                 foreach ($fkactions as $key => $action) {
-                    if (ForeignKey::RESTRICT === $action) {
+                    if ($action === ForeignKey::RESTRICT) {
                         $fkactions[$key] = null;
                     }
                 }
 
                 $localColumns = [];
                 $foreignColumns = [];
-                if ($table->guessSchemaName() != $database->getSchema() && false == strpos($ftbl, $database->getPlatform()->getSchemaDelimiter())) {
+                if ($table->guessSchemaName() != $database->getSchema() && strpos($ftbl, $database->getPlatform()->getSchemaDelimiter()) == false) {
                     $ftbl = $table->guessSchemaName() . $database->getPlatform()->getSchemaDelimiter() . $ftbl;
                 }
 
@@ -367,27 +475,32 @@ class MysqlSchemaParser extends AbstractSchemaParser
 
     /**
      * Load indexes for this table
+     *
+     * @param \Propel\Generator\Model\Table $table
+     *
+     * @return void
      */
     protected function addIndexes(Table $table)
     {
+        /** @var \PDOStatement $stmt */
         $stmt = $this->dbh->query(sprintf('SHOW INDEX FROM %s', $this->getPlatform()->doQuoting($table->getName())));
 
         // Loop through the returned results, grouping the same key_name together
         // adding each column for that key.
 
-        /** @var $indexes Index[] */
+        /** @var \Propel\Generator\Model\Index[] $indexes */
         $indexes = [];
-        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $colName = $row['Column_name'];
             $colSize = $row['Sub_part'];
             $name = $row['Key_name'];
 
-            if ('PRIMARY' === $name) {
+            if ($name === 'PRIMARY') {
                 continue;
             }
 
             if (!isset($indexes[$name])) {
-                $isUnique = (0 == $row['Non_unique']);
+                $isUnique = ($row['Non_unique'] == 0);
                 if ($isUnique) {
                     $indexes[$name] = new Unique($name);
                 } else {
@@ -402,7 +515,7 @@ class MysqlSchemaParser extends AbstractSchemaParser
 
             $indexes[$name]->addColumn([
                 'name' => $colName,
-                'size' => $colSize
+                'size' => $colSize,
             ]);
         }
 
@@ -417,35 +530,46 @@ class MysqlSchemaParser extends AbstractSchemaParser
 
     /**
      * Loads the primary key for this table.
+     *
+     * @param \Propel\Generator\Model\Table $table
+     *
+     * @return void
      */
     protected function addPrimaryKey(Table $table)
     {
+        /** @var \PDOStatement $stmt */
         $stmt = $this->dbh->query(sprintf('SHOW KEYS FROM %s', $this->getPlatform()->doQuoting($table->getName())));
 
         // Loop through the returned results, grouping the same key_name together
         // adding each column for that key.
-        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             // Skip any non-primary keys.
-            if ('PRIMARY' !== $row['Key_name']) {
+            if ($row['Key_name'] !== 'PRIMARY') {
                 continue;
             }
             $name = $row['Column_name'];
-            $table->getColumn($name)->setPrimaryKey(true);
+            $column = $table->getColumn($name);
+            if ($column) {
+                $column->setPrimaryKey(true);
+            }
         }
     }
 
     /**
      * Adds vendor-specific info for table.
      *
-     * @param Table $table
+     * @param \Propel\Generator\Model\Table $table
+     *
+     * @return void
      */
     protected function addTableVendorInfo(Table $table)
     {
+        /** @var \PDOStatement $stmt */
         $stmt = $this->dbh->query("SHOW TABLE STATUS LIKE '" . $table->getName() . "'");
-        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$this->addVendorInfo) {
             // since we depend on `Engine` in the MysqlPlatform, we always have to extract this vendor information
-            $row = ['Engine' => $row['Engine']];
+            $row = ['Engine' => $row ? $row['Engine'] : null];
         }
         $vi = $this->getNewVendorInfoObject($row);
         $table->addVendorInfo($vi);
